@@ -1,5 +1,6 @@
 # Set ADAPTDL_DEV_REPO to use an external docker registry.
 # Set ADAPTDL_DEV_REPO_CREDS to the name of registry secret.
+ADAPTDL_DEV_REPO = docker.pdl.cmu.edu/adaptdl-sched
 RELEASE_NAME = adaptdl
 LOCAL_PORT = 59283
 REMOTE_PORT = 32000
@@ -26,7 +27,8 @@ build:
 check-requirements:
 	@python3 cli/check_requirements.py
 
-push: check-requirements registry build
+# push: check-requirements registry build
+push: check-requirements build
 	python3 cli/adaptdl_cli/proxy.py -p $(LOCAL_PORT) $(NAMESPACE) \
 		adaptdl-registry:registry docker push $(LOCAL_REPO):$(IMAGE_TAG)
 

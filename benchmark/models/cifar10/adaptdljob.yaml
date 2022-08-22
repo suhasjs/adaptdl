@@ -17,11 +17,11 @@ spec:
         resources:
           limits:
             nvidia.com/gpu: 1
-            cpu: 10
+            cpu: 8
             memory: "40G"
           requests:
             nvidia.com/gpu: 1
-            cpu: 10
+            cpu: 8
             memory: "40G"
         volumeMounts:
         - name: data

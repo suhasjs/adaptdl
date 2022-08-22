@@ -78,7 +78,8 @@ if __name__ == "__main__":
 
     config.load_kube_config()
 
-    templates = build_images(["bert", "cifar10", "deepspeech2", "imagenet", "ncf", "yolov3"], args.repository)
+    # templates = build_images(["bert", "cifar10", "deepspeech2", "imagenet", "ncf", "yolov3"], args.repository)
+    templates = build_images(["cifar10"], args.repository)
     cache_images(templates)
 
     objs_api = client.CustomObjectsApi()

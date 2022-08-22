@@ -74,6 +74,8 @@ class VocDataset(Dataset):
         anno = annotation.strip().split(' ')
 
         img_path = anno[0]
+        img_path = img_path.split('/')[-4:]
+        img_path = os.path.join('/pollux/datasets/VOC', *img_path)
         img = cv2.imread(img_path)  # H*W*C and C=BGR
         assert img is not None, 'File Not Found ' + img_path
         bboxes = np.array([list(map(float, box.split(','))) for box in anno[1:]])

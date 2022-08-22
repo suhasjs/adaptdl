@@ -5,23 +5,32 @@ metadata:
 spec:
   template:
     spec:
+            #      hostNetwork: true
+      hostIPC: true
       containers:
       - name: main
+        securityContext:
+          capabilities:
+            add: ["IPC_LOCK"]
         command:
         - python3
         - /root/yolov3/train.py
         - --weight_path=/mnt/VOC/darknet53_448.weights
         env:
+        - name: NCCL_DEBUG
+          value: "INFO"
         - name: PYTHONUNBUFFERED
           value: "true"
         resources:
           limits:
             nvidia.com/gpu: 1
-            cpu: 10
+            rdma/hca: 1
+            cpu: 9
             memory: "40G"
           requests:
             nvidia.com/gpu: 1
-            cpu: 10
+            rdma/hca: 1
+            cpu: 9
             memory: "40G"
         volumeMounts:
         - name: data

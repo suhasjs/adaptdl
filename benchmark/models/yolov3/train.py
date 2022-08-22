@@ -40,7 +40,7 @@ class Trainer(object):
                                                                  num_workers=cfg.TRAIN["NUMBER_WORKERS"],
                                                                  drop_last=True,
                                                                  shuffle=True)
-        self.train_dataloader.autoscale_batch_size(512, local_bsz_bounds=(4, 8),
+        self.train_dataloader.autoscale_batch_size(512, local_bsz_bounds=(4, 32),
                                                    gradient_accumulation=True)
         self.valid_dataset = data.VocDataset(anno_file_type="test")
         self.valid_dataloader = adaptdl.torch.AdaptiveDataLoader(self.valid_dataset,
@@ -55,11 +55,13 @@ class Trainer(object):
         self.criterion = YoloV3Loss(anchors=cfg.MODEL["ANCHORS"], strides=cfg.MODEL["STRIDES"],
                                     iou_threshold_loss=cfg.TRAIN["IOU_THRESHOLD_LOSS"])
 
-        self.yolov3.load_darknet_weights(weight_path)
+#        self.yolov3.load_darknet_weights(weight_path)
 
         self.scheduler = CosineAnnealingLR(self.optimizer,
                                            T_max=(self.epochs - cfg.TRAIN["WARMUP_EPOCHS"]),
                                            eta_min=cfg.TRAIN["LR_END"])
+#        os.environ["ADAPTDL_SUPERVISOR_URL"] = ""
+#        os.environ["ADAPTDL_MASTER_ADDR"] = "phortx1"
         adaptdl.torch.init_process_group("nccl")
         self.yolov3, self.optimizer = amp.initialize(self.yolov3, self.optimizer)
         self.yolov3 = adaptdl.torch.AdaptiveDataParallel(self.yolov3, self.optimizer, self.scheduler,

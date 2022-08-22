@@ -5,8 +5,13 @@ metadata:
 spec:
   template:
     spec:
+      hostIPC: true
+      #      hostNetwork: true
       containers:
       - name: main
+        securityContext:
+          capabilities:
+            add: ["IPC_LOCK"]
         command:
         - python3
         - /root/imagenet/main.py
@@ -15,18 +20,20 @@ spec:
         - --lr=0.08
         - --epochs=90
         - --autoscale-bsz
-        - /mnt/imagenet
+        - /pollux/datasets/imagenet
         env:
         - name: PYTHONUNBUFFERED
           value: "true"
         resources:
           limits:
             nvidia.com/gpu: 1
-            cpu: 10
+            rdma/hca: 1
+            cpu: 9
             memory: "40G"
           requests:
             nvidia.com/gpu: 1
-            cpu: 10
+            rdma/hca: 1
+            cpu: 9
             memory: "40G"
         volumeMounts:
         - name: data

@@ -5,14 +5,19 @@ metadata:
 spec:
   template:
     spec:
+            #      hostNetwork: true
+      hostIPC: true
       containers:
       - name: main
+        securityContext:
+          capabilities:
+            add: ["IPC_LOCK"]
         command:
         - python
         - /root/deepspeech2/train.py
         - --cuda
-        - --train-manifest=/mnt/deepspeech2_data/voxforge_cmu_us_train_manifest_part1.csv
-        - --val-manifest=/mnt/deepspeech2_data/voxforge_cmu_us_train_manifest_part2.csv
+        - --train-manifest=/pollux/datasets/deepspeech2_data/voxforge_cmu_us_train_manifest_part1.csv
+        - --val-manifest=/pollux/datasets/deepspeech2_data/voxforge_cmu_us_train_manifest_part2.csv
         - --max-norm=1
         - --batch-size=20
         - --lr=0.12
@@ -25,11 +30,13 @@ spec:
         resources:
           limits:
             nvidia.com/gpu: 1
-            cpu: 10
+            rdma/hca: 1
+            cpu: 9
             memory: "40G"
           requests:
             nvidia.com/gpu: 1
-            cpu: 10
+            rdma/hca: 1
+            cpu: 9
             memory: "40G"
         volumeMounts:
         - name: data

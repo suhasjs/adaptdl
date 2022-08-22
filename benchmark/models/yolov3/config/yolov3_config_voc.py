@@ -1,6 +1,6 @@
 # coding=utf-8
 # project
-DATA_PATH = "/mnt/VOC"
+DATA_PATH = "/pollux/datasets/VOC"
 PROJECT_PATH = "/home/ubuntu/YOLOV3"
 
 

@@ -1,10 +1,13 @@
-FROM nvcr.io/nvidia/pytorch:20.10-py3
+#FROM nvcr.io/nvidia/pytorch:20.10-py3
+FROM docker.pdl.cmu.edu/pytorch-ib:1.9.0-cuda11.1-cudnn8-devel
 WORKDIR /root
 
 COPY adaptdl/requirements.txt requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 COPY benchmark/models/deepspeech2/requirements.txt requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+RUN apt-get update && apt-get install libsndfile1 -y
 
 COPY adaptdl adaptdl
 ENV PYTHONPATH=/root/adaptdl:$PYTHONPATH

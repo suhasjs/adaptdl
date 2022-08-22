@@ -115,6 +115,8 @@ train_loader = adaptdl.torch.AdaptiveDataLoader(train_dataset, drop_last=True,
 train_loader.autoscale_batch_size(32768, local_bsz_bounds=(32, 32768),
                                   gradient_accumulation=True)
 
+#os.environ["ADAPTDL_SUPERVISOR_URL"] = ""
+#os.environ["ADAPTDL_MASTER_ADDR"] = "phortx1"
 adaptdl.torch.init_process_group("nccl" if torch.cuda.is_available() else "gloo")
 model = adaptdl.torch.AdaptiveDataParallel(model, optimizer, scheduler)
 

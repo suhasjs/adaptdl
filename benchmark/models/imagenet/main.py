@@ -73,6 +73,8 @@ def main_worker(args):
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
 
+#    os.environ["ADAPTDL_SUPERVISOR_URL"] = ""
+#    os.environ["ADAPTDL_MASTER_ADDR"] = "phortx1"
     adaptdl.torch.init_process_group("nccl")
     model, optimizer = amp.initialize(model, optimizer)
     model = adaptdl.torch.AdaptiveDataParallel(model, optimizer, patch_optimizer=False)
@@ -98,7 +100,7 @@ def main_worker(args):
         train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True,
         num_workers=args.workers, pin_memory=True)
     if args.autoscale_bsz:
-        train_loader.autoscale_batch_size(12800, local_bsz_bounds=(20, 200), gradient_accumulation=True)
+        train_loader.autoscale_batch_size(12800, local_bsz_bounds=(20, 800), gradient_accumulation=True)
 
     val_loader = adaptdl.torch.AdaptiveDataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
@@ -110,15 +112,16 @@ def main_worker(args):
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 
-    with SummaryWriter(adaptdl.env.checkpoint_path() + "/tensorboard") as writer:
-        for epoch in adaptdl.torch.remaining_epochs_until(args.epochs):
-            adjust_learning_rate(optimizer, epoch, args)
+#    with SummaryWriter(adaptdl.env.checkpoint_path() + "/tensorboard") as writer:
+    for epoch in adaptdl.torch.remaining_epochs_until(args.epochs):
+        writer = None
+        adjust_learning_rate(optimizer, epoch, args)
 
-            # train for one epoch
-            train(train_loader, model, criterion, optimizer, epoch, args, writer)
+        # train for one epoch
+        train(train_loader, model, criterion, optimizer, epoch, args, writer)
 
-            # evaluate on validation set
-            acc1 = validate(val_loader, model, criterion, epoch, args, writer)
+        # evaluate on validation set
+        acc1 = validate(val_loader, model, criterion, epoch, args, writer)
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args, writer):
@@ -167,8 +170,8 @@ def train(train_loader, model, criterion, optimizer, epoch, args, writer):
 
         stats["train_loss_sum"] += loss.item() * images.size(0)
         stats["train_total"] += images.size(0)
-        train_loader.to_tensorboard(writer, epoch, "AdaptDL/Data")
-        model.to_tensorboard(writer, epoch, "AdaptDL/Model")
+#        train_loader.to_tensorboard(writer, epoch, "AdaptDL/Data")
+#        model.to_tensorboard(writer, epoch, "AdaptDL/Model")
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -181,7 +184,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args, writer):
         stats["train_loss_avg"] = stats["train_loss_sum"] / stats["train_total"]
         stats["acc1"] = stats["correct1"] / stats["total1"]
         stats["acc5"] = stats["correct5"] / stats["total5"]
-        writer.add_scalar("Loss/Train", stats["train_loss_avg"], epoch)
+#        writer.add_scalar("Loss/Train", stats["train_loss_avg"], epoch)
 
 
 def validate(val_loader, model, criterion, epoch, args, writer):
@@ -234,8 +237,8 @@ def validate(val_loader, model, criterion, epoch, args, writer):
             stats["acc1"] = stats["correct1"] / stats["total1"]
             stats["acc5"] = stats["correct5"] / stats["total5"]
             stats["loss"] = stats["loss_sum"] / stats["loss_cnt"]
-            writer.add_scalar("top1/Valid", stats["acc1"], epoch)
-            writer.add_scalar("top5/Valid", stats["acc5"], epoch)
+#            writer.add_scalar("top1/Valid", stats["acc1"], epoch)
+#            writer.add_scalar("top5/Valid", stats["acc5"], epoch)
     
     return top1.avg
 

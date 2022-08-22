@@ -135,7 +135,7 @@ if __name__ == '__main__':
 
     train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True,
                                    num_workers=args.num_workers)
-    train_loader.autoscale_batch_size(640, local_bsz_bounds=(10, 80), gradient_accumulation=True)
+    train_loader.autoscale_batch_size(640, local_bsz_bounds=(10, 320), gradient_accumulation=True)
     test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size,
                                   num_workers=args.num_workers)
 
@@ -143,6 +143,8 @@ if __name__ == '__main__':
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr,
                                 momentum=args.momentum, nesterov=False)
 
+#    os.environ["ADAPTDL_SUPERVISOR_URL"] = ""
+#    os.environ["ADAPTDL_MASTER_ADDR"] = "phortx1"
     adaptdl.torch.init_process_group("nccl")
     model = adaptdl.torch.AdaptiveDataParallel(model, optimizer)
     model.adascale._smoothing = 0.997

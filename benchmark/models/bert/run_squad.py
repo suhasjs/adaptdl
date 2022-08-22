@@ -97,7 +97,7 @@ def train(args, train_dataset, model, tokenizer):
 
     model = adaptdl.torch.AdaptiveDataParallel(model, optimizer)
     train_dataloader = adaptdl.torch.AdaptiveDataLoader(train_dataset, batch_size=args.train_batch_size, drop_last=True)
-    train_dataloader.autoscale_batch_size(384, local_bsz_bounds=(4, 12), gradient_accumulation=True)
+    train_dataloader.autoscale_batch_size(384, local_bsz_bounds=(4, 48), gradient_accumulation=True)
 
     # Train!
     logger.info("***** Running training *****")
@@ -585,6 +585,8 @@ def main():
     # Set seed
     set_seed(args)
 
+#    os.environ["ADAPTDL_SUPERVISOR_URL"] = ""
+#    os.environ["ADAPTDL_MASTER_ADDR"] = "phortx1"
     adaptdl.torch.init_process_group("nccl" if torch.cuda.is_available() else "gloo")
 
     # Load pretrained model and tokenizer

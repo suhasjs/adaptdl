@@ -1,4 +1,7 @@
-FROM nvcr.io/nvidia/pytorch:20.03-py3
+FROM docker.pdl.cmu.edu/pytorch-ib:1.9.0-cuda11.1-cudnn8-devel
+RUN rm /etc/apt/sources.list.d/cuda.list
+RUN rm /etc/apt/sources.list.d/nvidia-ml.list
+# FROM nvcr.io/nvidia/pytorch:20.03-py3
 WORKDIR /root
 
 COPY adaptdl/requirements.txt requirements.txt

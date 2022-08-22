@@ -3,6 +3,8 @@ kind: AdaptDLJob
 metadata:
   generateName: cifar10-
 spec:
+        # placement: ["phortx1","phortx2", "phortx3"] 
+  placement: ["phortx3"] 
   template:
     spec:
       containers:
@@ -34,3 +36,5 @@ spec:
           type: Directory
       imagePullSecrets:
       - name: regcred
+        # hostIPC: true
+        # hostNetwork: true

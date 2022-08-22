@@ -45,12 +45,12 @@ transform_test = transforms.Compose([
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
 
-trainset = torchvision.datasets.CIFAR10(root="/mnt", train=True, download=True, transform=transform_train)
+trainset = torchvision.datasets.CIFAR10(root="/pollux", train=True, download=True, transform=transform_train)
 trainloader = adaptdl.torch.AdaptiveDataLoader(trainset, batch_size=args.bs, shuffle=True, num_workers=2, drop_last=True)
 trainloader.autoscale_batch_size(4096, local_bsz_bounds=(32, 1024),
                                  gradient_accumulation=True)
 
-validset = torchvision.datasets.CIFAR10(root="/mnt", train=False, download=False, transform=transform_test)
+validset = torchvision.datasets.CIFAR10(root="/pollux", train=False, download=False, transform=transform_test)
 validloader = adaptdl.torch.AdaptiveDataLoader(validset, batch_size=100, shuffle=False, num_workers=2)
 
 # Model
@@ -68,6 +68,7 @@ net = eval(args.model)()
 # net = ShuffleNetG2()
 # net = SENet18()
 # net = ShuffleNetV2(1)
+print(f"Moving model to {device}")
 net = net.to(device)
 if device == 'cuda':
     cudnn.benchmark = True
@@ -78,7 +79,9 @@ optimizer = optim.SGD(net.parameters(),
                       lr=args.lr, momentum=0.9, weight_decay=5e-4)
 lr_scheduler = ExponentialLR(optimizer, 0.0133 ** (1.0 / args.epochs))
 
+print(f"INIT: NCCL")
 adaptdl.torch.init_process_group("nccl")
+print(f"INIT: adaptdl.AdaptiveDataParallel")
 net = adaptdl.torch.AdaptiveDataParallel(net, optimizer, lr_scheduler)
 
 # Training
@@ -135,6 +138,7 @@ def valid(epoch):
 
 with SummaryWriter(os.getenv("ADAPTDL_TENSORBOARD_LOGDIR", "/tmp")) as writer:
     for epoch in adaptdl.torch.remaining_epochs_until(args.epochs):
+        print(f"Starting epoch: {epoch}")
         train(epoch)
         valid(epoch)
         lr_scheduler.step()

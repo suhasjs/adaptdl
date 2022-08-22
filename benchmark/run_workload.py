@@ -71,7 +71,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("policy", type=str, choices=["pollux", "optimus", "tiresias"])
     parser.add_argument("workload", type=str, help="path to workload csv")
-    parser.add_argument("--repository", type=str, default="localhost:32000/pollux")
+    parser.add_argument("--repository", type=str, default="docker.pdl.cmu.edu/pollux")
     args = parser.parse_args()
 
     workload = pandas.read_csv(args.workload)
@@ -79,6 +79,8 @@ if __name__ == "__main__":
     config.load_kube_config()
 
     # templates = build_images(["bert", "cifar10", "deepspeech2", "imagenet", "ncf", "yolov3"], args.repository)
+    print(f"Clearing images in kubectl")
+    subprocess.call(["kubectl", "delete", "ds", "images"])
     templates = build_images(["cifar10"], args.repository)
     cache_images(templates)
 

@@ -3,7 +3,7 @@ kind: AdaptDLJob
 metadata:
   generateName: bert-
 spec:
-  placement: ["phodgx1", "phodgx1", "phodgx1", "phodgx1"]
+  placement: ["phortx1", "phortx1", "phortx1", "phortx1", "phortx1", "phortx1"]
   template:
     spec:
       terminationGracePeriodSeconds: 60
@@ -40,12 +40,12 @@ spec:
         resources:
           limits:
             nvidia.com/gpu: 1
-            rdma/hca: 1
+            rdma/hca: 0
             cpu: 9
             memory: "40G"
           requests:
             nvidia.com/gpu: 1
-            rdma/hca: 1
+            rdma/hca: 0
             cpu: 9
             memory: "40G"
         volumeMounts:

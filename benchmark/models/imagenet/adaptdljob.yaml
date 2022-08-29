@@ -3,6 +3,7 @@ kind: AdaptDLJob
 metadata:
   generateName: imagenet-
 spec:
+  placement: ["phodgx1", "phodgx1", "phodgx1", "phodgx1"]
   template:
     spec:
       hostIPC: true
@@ -20,10 +21,13 @@ spec:
         - --lr=0.08
         - --epochs=90
         - --autoscale-bsz
-        - /pollux/datasets/imagenet
+        - /pollux/imagenet
         env:
         - name: PYTHONUNBUFFERED
           value: "true"
+        - name: NCCL_DEBUG
+          value: "INFO"
+
         resources:
           limits:
             nvidia.com/gpu: 1

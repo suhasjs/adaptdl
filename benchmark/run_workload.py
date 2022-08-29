@@ -80,8 +80,10 @@ if __name__ == "__main__":
 
     # templates = build_images(["bert", "cifar10", "deepspeech2", "imagenet", "ncf", "yolov3"], args.repository)
     print(f"Clearing images in kubectl")
-    subprocess.call(["kubectl", "delete", "ds", "images"])
-    templates = build_images(["cifar10"], args.repository)
+    # subprocess.call(["kubectl", "delete", "ds", "images"])
+    images_to_build = ["deepspeech2"]
+    print(f"Building images: {images_to_build}")
+    templates = build_images(images_to_build, args.repository)
     cache_images(templates)
 
     objs_api = client.CustomObjectsApi()
@@ -118,6 +120,8 @@ if __name__ == "__main__":
             "mountPath": "/pollux/tensorboard",
             "subPath": "pollux/tensorboard/" + row.name,
         })
+        # Update: mount datasets pvc into all containers
+        mounts.append({"name": "pollux", "mountPath": "/pollux/"})
         env = job["spec"]["template"]["spec"]["containers"][0].setdefault("env", [])
         env.append({"name": "ADAPTDL_CHECKPOINT_PATH", "value": "/pollux/checkpoint"})
         env.append({"name": "ADAPTDL_TENSORBOARD_LOGDIR", "value": "/pollux/tensorboard"})

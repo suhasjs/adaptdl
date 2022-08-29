@@ -3,6 +3,7 @@ kind: AdaptDLJob
 metadata:
   generateName: deepspeech2-
 spec:
+  placement: ["phodgx1", "phodgx1", "phodgx1", "phodgx1", "phodgx1", "phodgx1"]
   template:
     spec:
             #      hostNetwork: true
@@ -16,8 +17,8 @@ spec:
         - python
         - /root/deepspeech2/train.py
         - --cuda
-        - --train-manifest=/pollux/datasets/deepspeech2_data/voxforge_cmu_us_train_manifest_part1.csv
-        - --val-manifest=/pollux/datasets/deepspeech2_data/voxforge_cmu_us_train_manifest_part2.csv
+        - --train-manifest=/pollux/deepspeech2_voxforge_cmu_us_train_manifest_part1.csv
+        - --val-manifest=/pollux/deepspeech2_voxforge_cmu_us_train_manifest_part2.csv
         - --max-norm=1
         - --batch-size=20
         - --lr=0.12

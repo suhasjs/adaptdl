@@ -1,2 +1,2 @@
 name,time,application,num_replicas,batch_size
-cifar10-0,7,cifar10,6,2048
+bert-dgx,7,bert,1,64

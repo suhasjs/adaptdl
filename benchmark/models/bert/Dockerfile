@@ -7,7 +7,8 @@ COPY adaptdl/requirements.txt requirements.txt
 RUN rm /etc/apt/sources.list.d/cuda.list
 RUN rm /etc/apt/sources.list.d/nvidia-ml.list
 RUN apt-get update && apt-get install python3-pip -y
-RUN pip3 install setuptools-rust
+RUN pip3 install setuptools==58.2.0
+RUN pip3 install setuptools-rust==1.2.0
 RUN pip3 install --upgrade pip
 RUN pip3 install --no-cache-dir -r requirements.txt
 COPY benchmark/models/bert/requirements.txt requirements.txt

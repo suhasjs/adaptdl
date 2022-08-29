@@ -1,5 +1,6 @@
 #FROM nvcr.io/nvidia/pytorch:20.10-py3
 FROM docker.pdl.cmu.edu/pytorch-ib:1.9.0-cuda11.1-cudnn8-devel
+RUN rm /etc/apt/sources.list.d/cuda.list && apt-key del 7fa2af80 && apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
 WORKDIR /root
 
 COPY adaptdl/requirements.txt requirements.txt

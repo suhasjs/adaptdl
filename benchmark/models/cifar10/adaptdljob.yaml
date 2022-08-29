@@ -3,7 +3,7 @@ kind: AdaptDLJob
 metadata:
   generateName: cifar10-
 spec:
-        #  placement: ["phodgx1", "phortx3"]
+  placement: ["phodgx1"]
   template:
     spec:
             #      hostNetwork: true
@@ -20,10 +20,13 @@ spec:
         env:
         - name: PYTHONUNBUFFERED
           value: "true"
+        - name: NCCL_DEBUG
+          value: "INFO"
+
         resources:
           limits:
             nvidia.com/gpu: 1
-            rdma/hca: 1
+            rdma/hca: 0
             cpu: 9
             memory: "40G"
           requests:

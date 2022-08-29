@@ -132,6 +132,10 @@ class PolluxPolicy(object):
                 in the form of a list of a node key for each replica.
         """
 
+        LOG.info(f"Input nodes: {nodes}")
+        LOG.info(f"Input jobs: {jobs}")
+
+
         # A job is considered pinned if it's non-preemptible *and* already has
         # an allocation.
         def ispinned(key, job):

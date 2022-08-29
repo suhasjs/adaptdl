@@ -5,6 +5,7 @@ metadata:
 spec:
   template:
     spec:
+      placement: ["phodgx1", "phodgx1", "phodgx1", "phodgx1"]
             #      hostNetwork: true
       hostIPC: true
       containers:

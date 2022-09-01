@@ -3,7 +3,7 @@ kind: AdaptDLJob
 metadata:
   generateName: ncf-
 spec:
-  placement: ["phortx1"]
+  placement: ["phodgx1"]
   maxReplicas: 1
   template:
     spec:

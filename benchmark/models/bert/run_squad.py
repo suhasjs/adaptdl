@@ -120,6 +120,7 @@ def train(args, train_dataset, model, tokenizer):
     for epoch in adaptdl.torch.remaining_epochs_until(args.num_train_epochs):
         accum = adaptdl.torch.Accumulator()
         for step, batch in enumerate(train_dataloader):
+            start_time = timeit.default_timer()
             model.train()
             batch = tuple(t.to(args.device) for t in batch)
 
@@ -172,6 +173,7 @@ def train(args, train_dataset, model, tokenizer):
             tb_writer.add_scalar("loss", loss.item(), current_step)
 
             print(current_step, loss.item())
+            print(f"minibatch time: {timeit.default_timer() - start_time}s")
 
         with accum.synchronized():
             accum["loss_avg"] = accum["loss_sum"] / accum["loss_cnt"]
@@ -566,8 +568,8 @@ def main():
         and not args.overwrite_output_dir
     ):
         raise ValueError(
-            "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
-                args.output_dir
+                "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome. Contents: {}".format(
+                args.output_dir, os.listdir(args.output_dir)
             )
         )
 

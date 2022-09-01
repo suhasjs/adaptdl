@@ -20,5 +20,5 @@ ENV PYTHONPATH=/root/adaptdl:$PYTHONPATH
 COPY benchmark/models/bert bert
 ENV PYTHONPATH=/root/bert:$PYTHONPATH
 WORKDIR /root/bert
-
+# ENV NCCL_P2P_LEVEL=NVL
 ENV PYTHONUNBUFFERED=true

@@ -121,7 +121,6 @@ def set_batch_size(init_batch_size, max_batch_size, local_bsz_bounds,
     state.local_bsz_bounds = local_bsz_bounds
     state.gradient_accumulation = gradient_accumulation
 
-
 def get_goodput_fn():
     state = _metrics_state()
     if state.grad_params is None or state.perf_params is None:

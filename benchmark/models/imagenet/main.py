@@ -60,7 +60,9 @@ parser.add_argument('--seed', default=None, type=int,
 parser.add_argument('--autoscale-bsz', dest='autoscale_bsz', default=False, action='store_true', help='autoscale batchsize')
 
 
+main_start = time.time()
 def main_worker(args):
+    print(f"TIME: {time.time() - main_start}s -- main_worker start")
 
     # create model
     print("=> creating model '{}'".format(args.arch))
@@ -73,11 +75,13 @@ def main_worker(args):
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
 
+    print(f"TIME: {time.time() - main_start}s -- Created model")
 #    os.environ["ADAPTDL_SUPERVISOR_URL"] = ""
 #    os.environ["ADAPTDL_MASTER_ADDR"] = "phortx1"
     adaptdl.torch.init_process_group("nccl")
     model, optimizer = amp.initialize(model, optimizer)
     model = adaptdl.torch.AdaptiveDataParallel(model, optimizer, patch_optimizer=False)
+    print(f"TIME: {time.time() - main_start}s -- Created AdaptiveDataParallel")
 
     cudnn.benchmark = True
 
@@ -100,7 +104,7 @@ def main_worker(args):
         train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True,
         num_workers=args.workers, pin_memory=True)
     if args.autoscale_bsz:
-        train_loader.autoscale_batch_size(12800, local_bsz_bounds=(20, 400), gradient_accumulation=True)
+        train_loader.autoscale_batch_size(12800, local_bsz_bounds=(20, 800), gradient_accumulation=True)
 
     val_loader = adaptdl.torch.AdaptiveDataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
@@ -111,6 +115,7 @@ def main_worker(args):
         ])),
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
+    print(f"TIME: {time.time() - main_start}s -- Created dataloaders")
 
 #    with SummaryWriter(adaptdl.env.checkpoint_path() + "/tensorboard") as writer:
     for epoch in adaptdl.torch.remaining_epochs_until(args.epochs):
@@ -121,7 +126,7 @@ def main_worker(args):
         train(train_loader, model, criterion, optimizer, epoch, args, writer)
 
         # evaluate on validation set
-        acc1 = validate(val_loader, model, criterion, epoch, args, writer)
+        # acc1 = validate(val_loader, model, criterion, epoch, args, writer)
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args, writer):
@@ -140,7 +145,11 @@ def train(train_loader, model, criterion, optimizer, epoch, args, writer):
     model.train()
 
     end = time.time()
+    first_step = True
     for i, (images, target) in enumerate(train_loader):
+        if first_step:
+            print(f"TIME: {time.time() - main_start}s -- Starting training.. ")
+            first_step = False
         # measure data loading time
         data_time.update(time.time() - end)
 
@@ -322,3 +331,4 @@ if __name__ == '__main__':
                       'from checkpoints.')
 
     main_worker(args)
+    print(f"TIME: {time.time() - main_start}s -- Finished training.")

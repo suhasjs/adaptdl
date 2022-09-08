@@ -19,6 +19,10 @@ import adaptdl
 import adaptdl.torch
 from adaptdl.torch._metrics import report_train_metrics, report_valid_metrics
 
+
+main_start = time.time()
+
+print(f"TIME: {time.time() - main_start}s -- Starting script")
 parser = argparse.ArgumentParser(description='DeepSpeech training')
 parser.add_argument('--train-manifest', metavar='DIR',
                     help='path to train manifest csv', default='data/train_manifest.csv')
@@ -151,15 +155,22 @@ if __name__ == '__main__':
     
     print(model)
     print("Number of parameters: %d" % DeepSpeech.get_param_size(model))
+    print(f"TIME: {time.time() - main_start}s -- Finished model + dataloader init")
+
 
     criterion = torch.nn.CTCLoss()
 
     logdir = "/tmp" if adaptdl.env.replica_rank() else os.getenv("ADAPTDL_TENSORBOARD_LOGDIR", "/tmp")
+    first_train_step = True
     with SummaryWriter(logdir) as writer:
         for epoch in adaptdl.torch.remaining_epochs_until(args.epochs):
             model.train()
             stats_train = adaptdl.torch.Accumulator()
             for i, data in enumerate(train_loader):
+                step_start = time.time()
+                if first_train_step:
+                    first_train_step = False
+                    print(f"TIME: {time.time() - main_start}s -- Starting training step")
                 inputs, targets, input_sizes, target_sizes = data
                 inputs = inputs.to(device)
                 input_sizes = input_sizes.to(device)
@@ -186,6 +197,8 @@ if __name__ == '__main__':
                 global_step = int(model.adascale._state["progress"])
                 train_loader.to_tensorboard(writer, global_step, tag_prefix="AdaptDL/Data")
                 model.to_tensorboard(writer, global_step, tag_prefix="AdaptDL/Model")
+                step_end = time.time()
+                print(f"minibatch time: {step_end - step_start}s")
 
                 del loss, out, float_out
 
@@ -195,7 +208,8 @@ if __name__ == '__main__':
                 report_train_metrics(epoch, stats_train["train_loss_avg"])
                 print('Training Summary Epoch: [{0}]\t'
                       'Average Loss {loss:.3f}\t'.format(epoch + 1, loss=stats_train["train_loss_avg"]))
-
+            '''
+            # SUHAS: Turn off eval in final runs
             with torch.no_grad():
                 wer, cer, = evaluate(test_loader=test_loader,
                                      device=device,
@@ -205,8 +219,10 @@ if __name__ == '__main__':
                 print('Validation Summary Epoch: [{0}]\t'
                       'Average WER {wer:.3f}\t'
                       'Average CER {cer:.3f}\t'.format(epoch + 1, wer=wer, cer=cer))
+            '''
 
             # anneal lr
             for g in optimizer.param_groups:
                 g['lr'] = g['lr'] / args.learning_anneal
             print('Learning rate annealed to: {lr:.6f}'.format(lr=g['lr']))
+

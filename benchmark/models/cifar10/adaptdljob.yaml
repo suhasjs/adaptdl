@@ -3,7 +3,7 @@ kind: AdaptDLJob
 metadata:
   generateName: cifar10-
 spec:
-  placement: ["phodgx1"]
+        # placement: ["phodgx1"]
   template:
     spec:
             #      hostNetwork: true
@@ -26,12 +26,12 @@ spec:
         resources:
           limits:
             nvidia.com/gpu: 1
-            rdma/hca: 0
+            rdma/hca: 1
             cpu: 9
             memory: "40G"
           requests:
             nvidia.com/gpu: 1
-            rdma/hca: 0
+            rdma/hca: 1
             cpu: 9
             memory: "40G"
         volumeMounts:

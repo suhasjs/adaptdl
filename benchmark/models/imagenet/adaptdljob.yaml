@@ -3,7 +3,7 @@ kind: AdaptDLJob
 metadata:
   generateName: imagenet-
 spec:
-  placement: ["phoquad1", "phoquad1", "phoquad1", "phoquad1"]
+        # placement: ["phoquad1", "phoquad1", "phoquad1", "phoquad1"]
   template:
     spec:
       hostIPC: true
@@ -31,12 +31,12 @@ spec:
         resources:
           limits:
             nvidia.com/gpu: 1
-            rdma/hca: 0
+            rdma/hca: 1
             cpu: 9
             memory: "40G"
           requests:
             nvidia.com/gpu: 1
-            rdma/hca: 0
+            rdma/hca: 1
             cpu: 9
             memory: "40G"
         volumeMounts:

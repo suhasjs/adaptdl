@@ -99,6 +99,7 @@ def train(args, train_dataset, model, tokenizer):
     train_dataloader = adaptdl.torch.AdaptiveDataLoader(train_dataset, batch_size=args.train_batch_size, drop_last=True)
     train_dataloader.autoscale_batch_size(384, local_bsz_bounds=(4, 48), gradient_accumulation=True)
 
+    print(f"TIME: {timeit.default_timer() - main_start}s -- Finished creating AdaptiveDataLoader and AdaptiveDataParallel model")
     # Train!
     logger.info("***** Running training *****")
     logger.info("  Num examples = %d", len(train_dataset))
@@ -117,6 +118,7 @@ def train(args, train_dataset, model, tokenizer):
     if adaptdl.collective.allreduce(get_exit_flag()):
         exit(143)
 
+    print(f"TIME: {timeit.default_timer() - main_start}s -- Starting training")
     for epoch in adaptdl.torch.remaining_epochs_until(args.num_train_epochs):
         accum = adaptdl.torch.Accumulator()
         for step, batch in enumerate(train_dataloader):
@@ -181,10 +183,14 @@ def train(args, train_dataset, model, tokenizer):
             report_train_metrics(epoch, accum["loss_avg"])
             print("Train:", accum)
 
-        results = evaluate(args, model, tokenizer)
-        for key, value in results.items():
-            tb_writer.add_scalar("eval_{}".format(key), value, epoch)
-        report_valid_metrics(epoch, 0.0, f1=results["f1"])
+        print(f"TIME: {timeit.default_timer() - main_start}s -- Finished train epoch.")
+
+        if False:
+            results = evaluate(args, model, tokenizer)
+            for key, value in results.items():
+                tb_writer.add_scalar("eval_{}".format(key), value, epoch)
+            report_valid_metrics(epoch, 0.0, f1=results["f1"])
+            print(f"TIME: {timeit.default_timer() - main_start}s -- Finished epoch eval.")
 
     tb_writer.close()
 
@@ -395,6 +401,8 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
 
 def main():
     parser = argparse.ArgumentParser()
+    global main_start
+    main_start = timeit.default_timer()
 
     # Required parameters
     parser.add_argument(
@@ -595,6 +603,7 @@ def main():
     if adaptdl.env.replica_rank() > 0:
         # Make sure only the first process in distributed training will download model & vocab
         torch.distributed.barrier()
+    print(f"TIME: {timeit.default_timer() - main_start}s -- Completed NCCL init + distributed barrier")
 
     args.model_type = args.model_type.lower()
     config = AutoConfig.from_pretrained(
@@ -618,6 +627,7 @@ def main():
         torch.distributed.barrier()
 
     model.to(args.device)
+    print(f"TIME: {timeit.default_timer() - main_start}s -- Finished creating model on device")
 
     logger.info("Training/evaluation parameters %s", args)
 
@@ -644,6 +654,7 @@ def main():
         tokenizer = AutoTokenizer.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
         model.to(args.device)
 
+    print(f"TIME: {timeit.default_timer() - main_start}s -- Finished training.")
     # Evaluation - we can ask to evaluate all the checkpoints (sub-directories) in a directory
     results = {}
     if args.do_eval and adaptdl.env.replica_rank() == 0:
@@ -675,6 +686,7 @@ def main():
             results.update(result)
 
     logger.info("Results: {}".format(results))
+    print(f"TIME: {timeit.default_timer() - main_start}s -- Finished main eval.")
 
     return results
 

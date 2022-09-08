@@ -22,6 +22,9 @@ import evaluate
 import data_utils
 
 
+main_start = time.time()
+print(f"TIME: {time.time() - main_start}s -- Starting script")
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--lr", 
   type=float, 
@@ -120,9 +123,14 @@ train_loader.autoscale_batch_size(32768, local_bsz_bounds=(32, 32768),
 adaptdl.torch.init_process_group("nccl" if torch.cuda.is_available() else "gloo")
 model = adaptdl.torch.AdaptiveDataParallel(model, optimizer, scheduler)
 
+print(f"TIME: {time.time() - main_start}s -- Finished model + trainloader init")
 ########################### TRAINING #####################################
+first_train_step = True
 with SummaryWriter(os.getenv("ADAPTDL_TENSORBOARD_LOGDIR", "/tmp")) as writer:
     for epoch in adaptdl.torch.remaining_epochs_until(args.epochs):
+        if first_train_step:
+            print(f"TIME: {time.time() - main_start}s -- Starting training step..")
+            first_train_step = False
         model.train() # Enable dropout (if have).
         start_time = time.time()
         train_loader.dataset.ng_sample()
@@ -150,12 +158,12 @@ with SummaryWriter(os.getenv("ADAPTDL_TENSORBOARD_LOGDIR", "/tmp")) as writer:
             report_train_metrics(epoch, stats["loss_avg"])
             print("Train:", stats)
 
-        model.eval()
-        HR, NDCG = evaluate.metrics(model, test_loader, args.top_k)
+        # model.eval()
+        # HR, NDCG = evaluate.metrics(model, test_loader, args.top_k)
 
-        writer.add_scalar("HR/Valid", HR, epoch)
-        writer.add_scalar("NDCG/Valid", NDCG, epoch)
-        report_valid_metrics(epoch, 0., hr=HR, ndcg=NDCG)
+        # writer.add_scalar("HR/Valid", HR, epoch)
+        # writer.add_scalar("NDCG/Valid", NDCG, epoch)
+        # report_valid_metrics(epoch, 0., hr=HR, ndcg=NDCG)
 
         elapsed_time = time.time() - start_time
         print("\nThe time elapse of epoch {:03d}".format(epoch) + " is: " + 

@@ -3,12 +3,12 @@ kind: AdaptDLJob
 metadata:
   generateName: bert-
 spec:
-  placement: ["phodgx1"]
+  placement: ["phodgx1","phodgx1","phodgx1","phodgx1"]
   template:
     spec:
       terminationGracePeriodSeconds: 60
       hostIPC: true
-      #      hostNetwork: true
+      # hostNetwork: true
       containers:
       - name: main
         securityContext:
@@ -38,8 +38,10 @@ spec:
           value: "INFO"
         - name: PYTHONUNBUFFERED
           value: "true"
-          # - name: NCCL_P2P_LEVEL
-          # value: "NVL"
+        - name: NCCL_DEBUG_SUBSYS
+          value: "INIT,NET,GRAPH,TUNING,ENV,P2P"
+        - name: NCCL_P2P_LEVEL
+          value: "NVL"
         resources:
           limits:
             nvidia.com/gpu: 1

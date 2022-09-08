@@ -20,8 +20,10 @@ from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.tensorboard import SummaryWriter
 
 from adaptdl.torch._metrics import report_train_metrics, report_valid_metrics
+import time
 
 
+main_start = time.time()
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--bs', default=128, type=int, help='batch size')
 parser.add_argument('--lr', default=0.08, type=float, help='learning rate')
@@ -83,12 +85,15 @@ lr_scheduler = ExponentialLR(optimizer, 0.0133 ** (1.0 / args.epochs))
 adaptdl.torch.init_process_group("nccl")
 net = adaptdl.torch.AdaptiveDataParallel(net, optimizer, lr_scheduler)
 
+print(f"TIME: {time.time() - main_start}s -- Finished creating model on device")
+
 # Training
 def train(epoch):
-    print('\nEpoch: %d' % epoch)
+    print(f"TIME: {time.time() - main_start}s -- Starting epoch: {epoch}")
     net.train()
     stats = adaptdl.torch.Accumulator()
     for inputs, targets in trainloader:
+        batch_start = time.time()
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
         outputs = net(inputs)
@@ -103,6 +108,8 @@ def train(epoch):
 
         trainloader.to_tensorboard(writer, epoch, tag_prefix="AdaptDL/Data")
         net.to_tensorboard(writer, epoch, tag_prefix="AdaptDL/Model")
+        batch_end = time.time()
+        print(f"minibatch time: {batch_end - batch_start}s")
 
     with stats.synchronized():
         stats["loss_avg"] = stats["loss_sum"] / stats["total"]
@@ -111,6 +118,7 @@ def train(epoch):
         writer.add_scalar("Accuracy/Train", stats["accuracy"], epoch)
         report_train_metrics(epoch, stats["loss_avg"], accuracy=stats["accuracy"])
         print("Train:", stats)
+    print(f"TIME: {time.time() - main_start}s -- Finished epoch: {epoch}")
 
 def valid(epoch):
     net.eval()
@@ -138,5 +146,6 @@ def valid(epoch):
 with SummaryWriter(os.getenv("ADAPTDL_TENSORBOARD_LOGDIR", "/tmp")) as writer:
     for epoch in adaptdl.torch.remaining_epochs_until(args.epochs):
         train(epoch)
-        valid(epoch)
+        # valid(epoch)
         lr_scheduler.step()
+    print(f"TIME: {time.time() - main_start} -- Finished training")

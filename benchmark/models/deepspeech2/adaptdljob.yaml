@@ -3,7 +3,7 @@ kind: AdaptDLJob
 metadata:
   generateName: deepspeech2-
 spec:
-  placement: ["phodgx1", "phodgx1", "phodgx1", "phodgx1", "phodgx1", "phodgx1"]
+        # placement: ["phodgx1", "phodgx1", "phodgx1", "phodgx1", "phodgx1", "phodgx1"]
   template:
     spec:
             #      hostNetwork: true

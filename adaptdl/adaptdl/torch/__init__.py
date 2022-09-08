@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import sys
 if "darwin" in sys.platform.lower():
     # To avoid multiple runs of the model code

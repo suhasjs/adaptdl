@@ -23,13 +23,13 @@ NODE_TO_CLUSTER_MAP = {
   "phortx1" : "rtx",
   "phortx2" : "rtx",
   "phortx3" : "rtx",
-  "phoquad1" : "quad"
+  "phoquad1" : "quad",
 }
 
 CLUSTER_NUM_GPUS = {
   "dgx" : 8,
   "rtx" : 8,
-  "quad" : 4
+  "quad" : 4,
 }
 
 class PolluxMIPPolicy(object):
@@ -104,7 +104,10 @@ class PolluxMIPPolicy(object):
       node_gpu_type = NODE_TO_CLUSTER_MAP.get(node_name, None)
       if node_gpu_type is None:
         print(f"Invalid node gpu type. Node = {node_gpu_type} -> {node_resources}")
-      self.cluster_node_ordering[node_gpu_type].setdefault([]).append(node_name)
+      else:
+        if node_gpu_type not in self.cluster_node_ordering:
+          self.cluster_node_ordering[node_gpu_type] = []
+        self.cluster_node_ordering[node_gpu_type].append(node_name)
     # get ordering between gpu types
     self.cluster_ordering = sorted(list(self.cluster_node_ordering.keys()))
     
@@ -794,6 +797,8 @@ class PolluxMIPPolicy(object):
     return job_allocs, cluster_allocs
 
   def optimize_dummy(self, jobs, nodes, base_allocations):
+    cluster_num_nodes, cluster_num_gpus = self.get_valid_configs(nodes)
+    print(f"cluster_num_nodes: {cluster_num_nodes}, cluster_num_gpus: {cluster_num_gpus}")
     return None
 
   def optimize(self, jobs, nodes, base_allocations, node_template):

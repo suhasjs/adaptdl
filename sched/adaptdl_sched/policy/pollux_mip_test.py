@@ -61,7 +61,7 @@ def test_optimize(num_nodes, total_devices=8):
            'nvidia.com/gpu': num_devices, 
            'pods': 84,
            'rdma/hca': num_devices}
-  nodes = {i: NodeInfo(node_resources, preemptible=False)
+  nodes = {"phodgx"+str(i+1): NodeInfo(node_resources, preemptible=False)
        for i in range(num_nodes)}
   # Add a node template.
   node_template = NodeInfo(node_resources, preemptible=True)
@@ -119,5 +119,5 @@ def test_unusable_node():
   assert sum(len(alloc) for alloc in allocations.values()) == 2
 
 if __name__ == "__main__":
-  for i in [1, 2, 4, 8, 16]:
+  for i in [8]:
     test_optimize(1, i)

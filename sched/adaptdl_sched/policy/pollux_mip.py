@@ -6,8 +6,6 @@ import logging
 import numpy as np
 import time as time
 
-from speedup import *
-
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
 
@@ -19,12 +17,20 @@ CONFIGS_8GPU = (np.asarray([1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8]),
 
 ZERO_ALLOC_GAIN = 0.01
 
-NODE_SUBSTR_TO_MAX_GPUS_MAPPING = {
+NODE_TO_CLUSTER_MAP = {
+    "phodgx1" : "dgx",
+    "phodgx2" : "dgx",
+    "phortx1" : "rtx",
+    "phortx2" : "rtx",
+    "phortx3" : "rtx",
+    "phoquad1" : "quad"
+}
+
+CLUSTER_NUM_GPUS = {
     "dgx" : 8,
     "rtx" : 8,
     "quad" : 4
 }
-
 
 class PolluxMIPPolicy(object):
     # ensure sign(p_fairness) != sign(lambda_*)
@@ -91,68 +97,25 @@ class PolluxMIPPolicy(object):
         # store cluster config for future use
         self.cluster_num_nodes, self.cluster_ngpus_per_node = cluster_num_nodes, cluster_num_gpus
     
-    def get_valid_configs(nodes):
-        cluster_node_mappings = dict()
+    def get_valid_configs(self, nodes):
+        # get gpu type -> nodenames map
+        self.cluster_node_ordering = dict()
         for node_name, node_resources in nodes.items():
-            for k in NODE_SUBSTR_TO_MAX_GPUS_MAPPING.keys():
-                if k in node_name:
-                    cluster_node_mappings.setdefault(k, []).append(node_name)
-                    break
+            node_gpu_type = NODE_TO_CLUSTER_MAP.get(node_name, None)
+            if node_gpu_type is None:
+                print(f"Invalid node gpu type. Node = {node_gpu_type} -> {node_resources}")
+            self.cluster_node_ordering[node_gpu_type].setdefault([]).append(node_name)
+        # get ordering between gpu types
+        self.cluster_ordering = sorted(list(self.cluster_node_ordering.keys()))
+        
+        # node ordering
+        for node_gpu_type in self.cluster_ordering:
+            self.cluster_node_ordering[node_gpu_type] = sorted(self.cluster_node_ordering[node_gpu_type])
 
+        self.cluster_num_nodes = {k : len(v) for k,v in self.cluster_node_ordering.items()}
+        self.cluster_num_gpus = {k : CLUSTER_NUM_GPUS[k] for k in self.cluster_ordering}
 
-    def update_timeshare_penalties(self, new_allocs):
-        max_window_num_obs = (self.window_len // self.sched_interval)
-        for jobname, new_alloc in new_allocs.items():
-            # new alloc is no-alloc?
-            no_alloc = np.sum(new_alloc) < 1
-            # could be change of alloc
-            if jobname in self.window_prev_allocs:
-                alloc_change = np.sum(np.abs(self.prev_allocs[jobname] - new_alloc)) > 0
-            else:
-                # no alloc -> alloc
-                alloc_change = True
-            # get no service
-            if no_alloc:
-                self.window_prev_allocs.setdefault(jobname, list()).append(0)
-            # get `sched_interval` service minus restart_penalty
-            elif alloc_change:
-                self.window_prev_allocs.setdefault(jobname, list()).append(self.sched_interval - self.restart_penalty)
-            # continue same allocation, get `sched_interval` service
-            else:
-                self.window_prev_allocs.setdefault(jobname, list()).append(self.sched_interval)
-            
-            if len(self.window_prev_allocs.get(jobname, list())) > max_window_num_obs:
-                self.window_prev_allocs[jobname] = self.window_prev_allocs[jobname][-max_window_num_obs:]
-
-    def get_timeshare_penalties(self, jobs, job_ordering):
-        max_window_num_obs = (self.window_len // self.sched_interval)
-        penalty_no_alloc, penalty_change_alloc, penalty_no_change = list(), list(), list()
-        for jobname in job_ordering:
-            job = jobs[jobname]
-            window_elapsed_time = min(job.age, max_window_num_obs * self.sched_interval)
-            window_active_time = sum(self.window_prev_allocs.get(jobname, []))
-            # no_alloc_penalty = window_active_time / (window_elapsed_time + self.sched_interval)
-            job_alloced = np.asarray(self.window_prev_allocs.get(jobname, [])) > 0
-            no_alloc_penalty = 1
-            if len(job_alloced) > 0:
-                if job_alloced[-1]:
-                    no_alloc_penalty += (max_window_num_obs - sum(job_alloced))
-                else:
-                    if sum(job_alloced) == 0:
-                        no_alloc_penalty += max_window_num_obs
-            # print(f"{jobname} : {no_alloc_penalty}")
-            alloc_change_penalty = (window_active_time + self.sched_interval - self.restart_penalty) \
-                                    / (window_elapsed_time + self.sched_interval)
-            no_change_penalty = (window_active_time + self.sched_interval) / (window_elapsed_time + self.sched_interval)
-            penalty_no_alloc.append(no_alloc_penalty)
-            penalty_change_alloc.append(alloc_change_penalty)
-            penalty_no_change.append(no_change_penalty)
-
-        # convert to numpy arrays
-        penalty_no_alloc = np.asarray(penalty_no_alloc, dtype=np.float32)
-        penalty_change_alloc = np.asarray(penalty_change_alloc, dtype=np.float32)
-        penalty_no_change = np.asarray(penalty_no_change, dtype=np.float32)
-        return penalty_no_alloc, penalty_change_alloc, penalty_no_change
+        return self.cluster_num_nodes, self.cluster_num_gpus
 
     # job_allocs: {jobname : (num_nodes, num_gpus)}
     def alloc_to_placement(self, cluster_name, job_allocs, node_remaining_gpus):
@@ -830,8 +793,11 @@ class PolluxMIPPolicy(object):
         # print(f"Effective GPUs: {sum(effective_gpus.values())}")
         return job_allocs, cluster_allocs
 
+    def optimize_dummy(self, jobs, nodes, base_allocations):
+        return None
 
-    def optimize(self, jobs, nodes, base_allocations):
+    def optimize(self, jobs, nodes, base_allocations, node_template):
+        return self.optimize_dummy(jobs, nodes, base_allocations)
         if self.p_fairness > 0:
             return self.optimize_mip(jobs, nodes, base_allocations)
         elif self.p_fairness < 0:

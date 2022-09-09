@@ -34,6 +34,22 @@ class JobInfo(object):
         self.max_replicas = max_replicas
         self.min_replicas = min_replicas
         self.preemptible = preemptible
+        self.attained_service = 0
+        self.num_restarts = 0
+        self.age = 0
+
+    def __repr__(self):
+        rep = "JobInfo("
+        rep += ('resources: ' + str(self.resources))
+        rep += (', speedup_fn: ' + str(self.speedup_fn))
+        rep += (', creation_timestamp: ' + str(self.creation_timestamp))
+        rep += (', replica_range: ' + str((self.min_replicas, self.max_replicas)))
+        rep += (', preemptible: ' + str(self.preemptible))
+        rep += (', attained_service: ' + str(self.attained_service))
+        rep += (', num_restarts: ' + str(self.num_restarts))
+        rep += (', age: ' + str(self.age))
+        rep += ')'
+        return rep
 
 
 class NodeInfo(object):
@@ -45,3 +61,10 @@ class NodeInfo(object):
         """
         self.resources = resources
         self.preemptible = preemptible
+
+    def __repr__(self):
+        rep = "NodeInfo("
+        rep += ('resources: ' + str(self.resources))
+        rep += (', preemptible: ' + str(self.preemptible))
+        rep += ')'
+        return rep

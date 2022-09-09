@@ -30,6 +30,16 @@ class SpeedupFunction(object):
         # Memoization for fast repeated queries.
         self._mem_speedup = -np.ones((mem_size, mem_size))
         self._mem_speedup[0, 0] = 0.0
+    
+    def __repr__(self):
+        rep = "SpeedupFunction("
+        rep += ('_goodput_fn: ' + str(self._goodput_fn))
+        rep += (', _max_batch_size: ' + str(self._max_batch_size))
+        rep += (', _atomic_bsz_range: ' + str(self._atomic_bsz_range))
+        rep += (', _accumulation: ' + str(self._accumulation))
+        rep += (', _mem_size: ' + str(self._mem_size))
+        rep += ')'
+        return rep
 
     def __call__(self, num_nodes, num_replicas):
         assert np.all(np.less_equal(0, num_nodes))

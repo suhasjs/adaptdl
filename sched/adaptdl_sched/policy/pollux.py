@@ -134,6 +134,7 @@ class PolluxPolicy(object):
 
         LOG.info(f"Input nodes: {nodes}")
         LOG.info(f"Input jobs: {jobs}")
+        LOG.info(f"Input base_allocations: {base_allocations}")
 
 
         # A job is considered pinned if it's non-preemptible *and* already has

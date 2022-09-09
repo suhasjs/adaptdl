@@ -61,6 +61,14 @@ class GoodputFunction(object):
 
     def __call__(self, num_nodes, num_replicas, atomic_bsz, accum_steps):
         return self.evaluate(num_nodes, num_replicas, atomic_bsz, accum_steps)
+    
+    def __repr__(self):
+        rep = "GoodputFunction("
+        rep += ('_perf_params: ' + str(self._perf_params))
+        rep += (', _grad_params: ' + str(self._grad_params))
+        rep += (', _init_batch_size: ' + str(self._init_batch_size))
+        rep += ')'
+        return rep
 
     def evaluate(self, num_nodes, num_replicas, atomic_bsz, accum_steps):
         batch_size = num_replicas * atomic_bsz * (accum_steps + 1)

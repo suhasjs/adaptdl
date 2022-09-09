@@ -19,12 +19,12 @@ import time
 from collections import Counter
 from datetime import datetime, timedelta
 from adaptdl.goodput import GoodputFunction, PerfParams, GradParams
-from adaptdl_sched.policy.pollux import PolluxPolicy
+from adaptdl_sched.policy.pollux_mip import PolluxMIPPolicy
 from adaptdl_sched.policy.speedup import SpeedupFunction
 from adaptdl_sched.policy.utils import JobInfo, NodeInfo
 
-
-@pytest.mark.parametrize("num_nodes", [1, 2, 4, 8, 16])
+# @pytest.mark.parametrize("num_nodes", [1, 2, 4, 8, 16])
+@pytest.mark.parametrize("num_nodes", [4])
 def test_optimize(num_nodes, total_devices=16):
     assert total_devices % num_nodes == 0
     num_devices = total_devices // num_nodes
@@ -53,7 +53,7 @@ def test_optimize(num_nodes, total_devices=16):
              for i in range(num_nodes)}
     # Add a node template.
     node_template = NodeInfo(node_resources, preemptible=True)
-    policy = PolluxPolicy()
+    policy = PolluxMIPPolicy()
     prev_allocs = {}
     for i in range(3):
         start = time.time()
@@ -69,6 +69,7 @@ def test_optimize(num_nodes, total_devices=16):
         for node_key, count in node_count.items():
             assert count <= nodes[node_key].resources["nvidia.com/gpu"]
             assert count <= nodes[node_key].resources["pods"]
+
 
 def test_unusable_node():
     # Test where one of the nodes can't be used due to one resource type.
@@ -94,7 +95,7 @@ def test_unusable_node():
         2: JobInfo({"gpu": 1, "cpu": 1000, "pods": 1}, speedup_fn,
                    now + timedelta(minutes=2), min_replicas, max_replicas=1),
     }
-    policy = PolluxPolicy()
+    policy = PolluxMIPPolicy()
     allocations, desired_nodes = policy.optimize(jobs, nodes, {}, template)
     # Check that more nodes are asked for.
     assert desired_nodes > 3

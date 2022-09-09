@@ -27,6 +27,7 @@ from apex.amp._amp_state import _amp_state
 
 from adaptdl.torch._metrics import report_train_metrics, report_valid_metrics, get_progress
 
+main_start = time.time()
 
 class Trainer(object):
     def __init__(self, weight_path):
@@ -67,6 +68,7 @@ class Trainer(object):
         self.yolov3 = adaptdl.torch.AdaptiveDataParallel(self.yolov3, self.optimizer, self.scheduler,
                                                          patch_optimizer=False)
         self.yolov3.adascale._smoothing = 0.997
+        print(f"TIME: {time.time() - main_start}s -- Finished init for trainer..")
 
     def valid(self, epoch):
         self.yolov3.train()
@@ -108,11 +110,15 @@ class Trainer(object):
     def train(self):
         print(self.yolov3)
         print("Train datasets number is : {}".format(len(self.train_dataset)))
+        is_first_step = True
         for epoch in adaptdl.torch.remaining_epochs_until(self.epochs):
             self.yolov3.train()
             accum = adaptdl.torch.Accumulator()
             with SummaryWriter(os.getenv("ADAPTDL_TENSORBOARD_LOGDIR", "/tmp")) as writer:
                 for imgs, label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes in self.train_dataloader:
+                    if is_first_step:
+                        is_first_step = False
+                        print(f"TIME: {time.time() - main_start}s -- Starting training...")
                     imgs = imgs.cuda()
                     label_sbbox = label_sbbox.cuda()
                     label_mbbox = label_mbbox.cuda()
@@ -164,7 +170,7 @@ class Trainer(object):
                     report_train_metrics(epoch, accum["loss_avg"])
                     print("Train:", accum)
 
-            self.valid(epoch)
+            # self.valid(epoch)
 
             if epoch >= cfg.TRAIN["WARMUP_EPOCHS"]:
                 self.scheduler.step()
@@ -182,6 +188,7 @@ class Trainer(object):
 
 
 if __name__ == "__main__":
+    print(f"TIME: {time.time() - main_start}s -- Entered main.. ")
     parser = argparse.ArgumentParser()
     parser.add_argument('--weight_path', type=str, default='weight/darknet53_448.weights', help='weight file path')
     opt = parser.parse_args()

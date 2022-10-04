@@ -26,6 +26,17 @@ NODE_TO_CLUSTER_MAP = {
   "phoquad1" : "quad",
 }
 
+DEBUG_PHOEBE = True
+
+NODE_TO_ID_MAP = {
+  "phodgx1" : 0,
+  "phodgx2" : 1,
+  "phortx1" : 2,
+  "phortx2" : 3,
+  "phortx3" : 4,
+  "phoquad1" : 5,
+}
+
 CLUSTER_NUM_GPUS = {
   "dgx" : 8,
   "rtx" : 8,
@@ -39,7 +50,7 @@ class PolluxMIPPolicy(object):
          lambda_a=0,
          lambda_n=1,
          project_throughputs=True,
-         share_max_replicas=True,
+         share_max_replicas=False,
          timeshare_penalty_window=None):
     # fairness param
     self.p_fairness = p_fairness
@@ -79,24 +90,7 @@ class PolluxMIPPolicy(object):
     self.apply_timeshare_penalty = timeshare_penalty_window is not None
     self.window_prev_allocs = dict()
     self.window_len = timeshare_penalty_window
-    
-  def populate_valid_configs(self, cluster_num_nodes, cluster_num_gpus):
-    self.configs = dict()
-    self.cluster_ordering = []
-    print(f"Unique configs:")
-    for cluster_name in cluster_num_gpus.keys():
-      self.cluster_ordering.append(cluster_name)
-      nnodes, ngpus = cluster_num_nodes[cluster_name], cluster_num_gpus[cluster_name]
-      alloc_configs = CONFIGS_4GPU if ngpus == 4 else CONFIGS_8GPU
-      valid_config_idxs = alloc_configs[0] <= nnodes
-      num_valid_nodes = alloc_configs[0][valid_config_idxs]
-      num_valid_gpus = alloc_configs[1][valid_config_idxs]
-      alloc_configs = (num_valid_nodes, num_valid_gpus)
-      self.configs[cluster_name] = alloc_configs
-      print(f"Cluster: {cluster_name}, Configs: {self.configs[cluster_name]}")
-    # store cluster config for future use
-    self.cluster_num_nodes, self.cluster_ngpus_per_node = cluster_num_nodes, cluster_num_gpus
-  
+      
   def get_valid_configs(self, nodes):
     # get gpu type -> nodenames map
     self.cluster_node_ordering = dict()
@@ -118,7 +112,28 @@ class PolluxMIPPolicy(object):
     self.cluster_num_nodes = {k : len(v) for k,v in self.cluster_node_ordering.items()}
     self.cluster_num_gpus = {k : CLUSTER_NUM_GPUS[k] for k in self.cluster_ordering}
 
-    return self.cluster_num_nodes, self.cluster_num_gpus
+    # get valid configs for each GPU type
+    configs = dict()
+    for node_gpu_type in self.cluster_ordering:
+      configs[node_gpu_type] = []
+      num_gpus_per_node = self.cluster_num_gpus[node_gpu_type]
+      i = 1
+      while i <= num_gpus_per_node:
+        configs[node_gpu_type].append((1, i))
+        i *= 2
+      j = 2
+      while j <= self.cluster_num_nodes[node_gpu_type]:
+        configs[node_gpu_type].append((j, j * num_gpus_per_node))
+        j += 1
+    self.configs = configs
+    
+    new_nodes = dict()
+    for cluster in self.cluster_ordering:
+      cluster_node_dict = dict()
+      for i, node_name in enumerate(self.cluster_node_ordering[cluster]):
+        cluster_node_dict[i] = nodes[node_name]
+      new_nodes[cluster] = cluster_node_dict
+    return new_nodes, self.configs
 
   # job_allocs: {jobname : (num_nodes, num_gpus)}
   def alloc_to_placement(self, cluster_name, job_allocs, node_remaining_gpus):
@@ -365,6 +380,14 @@ class PolluxMIPPolicy(object):
 
     return job_placements
 
+  # allocs: request for resources of type [jobname -> {cluster, (num_nodes, num_gpus)}]
+  # prev_placements: [jobname -> {cluster, [gpu0, gpu1, gpu2, ...]}]
+  def alloc_to_placement(self, allocs, prev_allocs, nodes):
+    # reflect no-alloc actions first
+    for jobname, alloc in allocs.items():
+      if alloc[0] is None:
+
+
   def optimize_mip_inv(self, jobs, nodes, prev_allocations):
     np.set_printoptions(suppress=True)
     joblist, jobnames = [], []
@@ -376,12 +399,11 @@ class PolluxMIPPolicy(object):
     num_gpus = {}
 
     # filter jobs to only contain active jobs first
-    for k, k_nodes in nodes.items():
-      num_gpus[k] = 0
-      for node_idx, node in k_nodes.items():
-        num_gpus[k] += node.resources["nvidia.com/gpu"]
-    num_configs = {k : len(v[1]) for k, v in self.configs.items()}
+    for k, k_nodes in self.cluster_num_nodes.items():
+      num_gpus[k] = k_nodes * self.cluster_num_gpus[k]
+    num_configs = {k : len(v) for k, v in self.configs.items()}
     total_num_configs = sum(num_configs.values())
+    print(f"Total number of configs per job: {total_num_configs}")
 
     # single-cluster speedup-matrix
     cluster_goodput_matrices = {k : np.zeros((num_jobs, num_configs[k]), dtype=np.float32) + ZERO_ALLOC_GAIN 
@@ -403,12 +425,17 @@ class PolluxMIPPolicy(object):
       nnz_speedups = dict()
       for cluster in self.cluster_ordering:
         speedup_fn = job.speedup_fn[cluster]
-        if self.share_max_replicas:
-          max_replicas = max(job.max_replicas.values())
-          min_replicas = min(job.min_replicas.values())
+        if isinstance(job.max_replicas, dict):
+          if self.share_max_replicas:
+            max_replicas = max(job.max_replicas.values())
+            min_replicas = min(job.min_replicas.values())
+          else:
+            max_replicas = job.max_replicas[cluster]
+            min_replicas = job.min_replicas[cluster]
         else:
-          max_replicas = job.max_replicas[cluster]
-          min_replicas = job.min_replicas[cluster]
+          max_replicas=  job.max_replicas
+          min_replicas = job.min_replicas
+
         if min_replicas > 1:
           print(f"Min replicas: {min_replicas}")
         
@@ -424,7 +451,8 @@ class PolluxMIPPolicy(object):
             continue
 
         # cluster-specific configs
-        alloc_num_nodes, alloc_num_replicas = self.configs[cluster]
+        cluster_configs = self.configs[cluster]
+        alloc_num_nodes, alloc_num_replicas = np.asarray([v[0] for v in cluster_configs]), np.asarray([v[1] for v in cluster_configs])
         valid_configs = (alloc_num_replicas <= max_replicas) & (alloc_num_replicas >= min_replicas)
         valid_nnodes, valid_ngpus = alloc_num_nodes[valid_configs], alloc_num_replicas[valid_configs]
         goodput_matrix = cluster_goodput_matrices[cluster]
@@ -456,11 +484,11 @@ class PolluxMIPPolicy(object):
         # assert max(cluster_goodput_matrices[cluster][i, :]) < 500, "bad speedup values"
       
       # re-alloc/migrate factor
-      job_lost_gpu_seconds = (job.num_restarts * self.restart_penalty) + (job.num_migrations * self.migrate_penalty)
+      # TODO :: suhasj --> incorporate custom migration penalty
+      job_lost_gpu_seconds = (job.num_restarts * self.restart_penalty)
       realloc_factor = max((job.age - job_lost_gpu_seconds), 0) / (job.age + self.restart_penalty)
-      migrate_factor = max((job.age - job_lost_gpu_seconds), 0) / (job.age + self.migrate_penalty)
       realloc_factors.append(realloc_factor)
-      migrate_factors.append(migrate_factor)
+      migrate_factors.append(1)
     
     self.save_current_gput_ratios(cluster_goodput_matrices, self.cluster_ordering)
 
@@ -512,7 +540,7 @@ class PolluxMIPPolicy(object):
     idx = 0
     for cluster in self.cluster_ordering:
       cluster_config_offset[cluster] = idx
-      cluster_num_configs[cluster] = len(self.configs[cluster][0])
+      cluster_num_configs[cluster] = len(self.configs[cluster])
       idx += cluster_num_configs[cluster]
     ones_jobvec = np.ones((1, num_jobs), dtype=np.float32)
     ones_configvec = np.ones((num_configs, 1), dtype=np.float32)
@@ -601,7 +629,8 @@ class PolluxMIPPolicy(object):
     # slow sub-cluster
     for cluster in self.cluster_ordering:
       start_offset, end_offset = cluster_config_offset[cluster], cluster_config_offset[cluster] + cluster_num_configs[cluster]
-      config_nnodes, config_ngpus = self.configs[cluster]
+      alloc_configs = self.configs[cluster]
+      config_ngpus = np.asarray([v[1] for v in alloc_configs], dtype=np.uint32)
       constraints.append(cp.sum(x[:, start_offset : end_offset] @ config_ngpus) <= num_gpus[cluster])
 
     # constraint only one config per job
@@ -638,7 +667,7 @@ class PolluxMIPPolicy(object):
         cluster_id = np.nonzero(alloc_config_idx >= cluster_config_offset_list)[0][-1]
         cluster_name = self.cluster_ordering[cluster_id]
         config_idx = alloc_config_idx - cluster_config_offset_list[cluster_id]
-        nnodes, ngpus = self.configs[cluster_name][0][config_idx], self.configs[cluster_name][1][config_idx]
+        nnodes, ngpus = self.configs[cluster_name][config_idx][0], self.configs[cluster_name][config_idx][1]
         job_allocs[jobname] = (cluster_name, (nnodes, ngpus))
         if cluster_name not in cluster_allocs:
           cluster_allocs[cluster_name] = dict()
@@ -796,16 +825,30 @@ class PolluxMIPPolicy(object):
     # print(f"Effective GPUs: {sum(effective_gpus.values())}")
     return job_allocs, cluster_allocs
 
-  def optimize_dummy(self, jobs, nodes, base_allocations):
-    cluster_num_nodes, cluster_num_gpus = self.get_valid_configs(nodes)
-    print(f"cluster_num_nodes: {cluster_num_nodes}, cluster_num_gpus: {cluster_num_gpus}")
-    return None
-
   def optimize(self, jobs, nodes, base_allocations, node_template):
-    return self.optimize_dummy(jobs, nodes, base_allocations)
+    new_nodes, alloc_configs = self.get_valid_configs(nodes)
+    # TODO :: jobs[i].speedup_fn is not a map : gpu_type -> gpu_speedup_fn
+    if DEBUG_PHOEBE:
+      for job_name in jobs.keys():
+        chosen_cluster = "dgx"
+        speedup_fns = dict()
+        for cluster in self.cluster_ordering:
+          speedup_fns[cluster] = None
+          if cluster == chosen_cluster:
+            speedup_fns[cluster] = jobs[job_name].speedup_fn
+        jobs[job_name].speedup_fn = speedup_fns
+      
+      cluster_num_nodes, cluster_num_gpus = dict(), dict()
+      for cluster, cluster_nodes in new_nodes.items():
+        cluster_num_nodes[cluster] = len(new_nodes[cluster])
+        cluster_num_gpus[cluster] = 0
+        for idx, node_info in cluster_nodes.items():
+          cluster_num_gpus[cluster] += node_info.resources['nvidia.com/gpu']
+    print(f"Optimize: cluster_num_nodes: {cluster_num_nodes}, cluster_num_gpus: {cluster_num_gpus}")
+    print(f"Alloc configs: {alloc_configs}")
     if self.p_fairness > 0:
-      return self.optimize_mip(jobs, nodes, base_allocations)
+      return self.optimize_mip(jobs, new_nodes, base_allocations)
     elif self.p_fairness < 0:
-      return self.optimize_mip_inv(jobs, nodes, base_allocations)
+      return self.optimize_mip_inv(jobs, new_nodes, base_allocations)
     else:
       print(f"Invalid p value : {self.p_fairness}")

@@ -78,3 +78,18 @@ class SpeedupFunction(object):
         assert np.all(np.less_equal(0, speedup))
         speedup = speedup.reshape(output_shape)
         return speedup.item() if output_scalar else speedup
+
+    def get_goodput(self, num_nodes, num_replicas, return_speedup_only=False):
+        assert np.all(np.less_equal(0, num_nodes))
+        assert np.all(np.less_equal(num_nodes, num_replicas))
+        assert np.all((num_nodes > 0) == (num_replicas > 0))
+
+        goodputs, _, _ = self._goodput_fn.optimize(
+                num_nodes, num_replicas,
+                max_batch_size=self._max_batch_size,
+                atomic_bsz_range=self._atomic_bsz_range,
+                accumulation=self._accumulation)
+        if return_speedup_only:
+            return goodputs /  self._base_goodput
+        else:
+            return goodputs

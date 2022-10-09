@@ -29,12 +29,9 @@ NODE_TO_CLUSTER_MAP = {
 DEBUG_PHOEBE = True
 
 NODE_TO_ID_MAP = {
-  "phodgx1" : 0,
-  "phodgx2" : 1,
-  "phortx1" : 2,
-  "phortx2" : 3,
-  "phortx3" : 4,
-  "phoquad1" : 5,
+  "dgx" : {0 :"phodgx1", 1 : "phodgx2"},
+  "rtx" : {0 : "phortx1", 1 : "phortx2", 2 : "phortx3"},
+  "quad" : {0 : "phoquad1"}
 }
 
 CLUSTER_NUM_GPUS = {
@@ -135,56 +132,136 @@ class PolluxMIPPolicy(object):
       new_nodes[cluster] = cluster_node_dict
     return new_nodes, self.configs
 
+  # cluster_name: cluster name
   # job_allocs: {jobname : (num_nodes, num_gpus)}
-  def alloc_to_placement(self, cluster_name, job_allocs, node_remaining_gpus):
+  # prev_placements: {jobname : (cluster, [gpu0, gpu1, gpu2, ...])}
+  # node_remaining_gpus: [gpus_left_in_node_0, gpus_left_in_node_1, .. N-1]
+  def alloc_to_placement_smart(self, cluster_name, job_allocs, prev_allocs, node_remaining_gpus):
+    LOG.info(f"Cluster: {cluster_name}")
+    LOG.info(f"Allocs: {job_allocs}")
+    LOG.info(f"Prev Placements: {job_allocs}")
     max_num_nodes = len(node_remaining_gpus)
-    cur_node_id = 0
-    placements = {}
-    # sort by num gpus needed
-    job_order = sorted(list(job_allocs.items()), key=lambda x : x[1][1], reverse=True)
-    ngpus_per_node = np.max(node_remaining_gpus)
-    # try to alloc distributed jobs on different nodes first
-    for jobname, alloc in job_order:
-      num_nodes, num_gpus = alloc
-      node_id = cur_node_id
-      num_full_nodes = num_gpus // ngpus_per_node
-
-      # corner case
+    # determined {jobname : [gpu0, gpu1, gpu2...]}
+    placed_jobs = dict()
+    # partition into distributed and single-node jobs
+    single_node_jobs, distributed_jobs = [], []
+    ngpus_per_node = CLUSTER_NUM_GPUS[cluster_name]
+    for jobname, (nnodes, ngpus) in job_allocs.items():
+      if ngpus >= ngpus_per_node:
+        distributed_jobs.append(jobname)
+      else:
+        single_node_jobs.append(jobname)
+    # preserve placements for no change in alloc
+    distr_placed_jobs = dict()
+    single_placed_jobs = dict()
+    for jobname in job_allocs.keys():
+      prev_cluster, prev_gpus = prev_allocs.get(jobname, (None, []))
+      _, cur_ngpus = job_allocs.get(jobname, (0, 0))
+      if prev_cluster == cluster_name and len(prev_gpus) == cur_ngpus:
+        if cur_ngpus < ngpus_per_node:
+          single_placed_jobs[jobname] = prev_gpus
+        else:
+          distr_placed_jobs[jobname] = prev_gpus
+        for node_id in prev_gpus:
+          node_remaining_gpus[node_id] -= 1
+          # print(f"Preserving placement: {jobname} -> {cluster_name}, {prev_gpus}")
+    
+    # alloc any other distr jobs from last node ID
+    for jobname in distributed_jobs:
+      # skip if preserving placement
+      if jobname in distr_placed_jobs:
+        continue
+      nnodes, ngpus = job_allocs.get(jobname, (0, 0))
+      assert ngpus != 0, f"got zero gpus for {jobname}"
+      # allocate nodes from last node ID
+      cur_node_id = max_num_nodes - 1
       job_placement = []
-      if num_gpus == 0:
-        placements[jobname] = job_placement
+      while nnodes > 0 and cur_node_id >= 0:
+        # take whole node
+        if node_remaining_gpus[cur_node_id] == ngpus_per_node:
+          job_placement.extend([int(cur_node_id)] * ngpus_per_node)
+          node_remaining_gpus[cur_node_id] = 0
+          nnodes -= 1
+        cur_node_id -= 1
+        if cur_node_id == -1 and nnodes > 0:
+          # reclaim some node from single-node jobs
+          reclaim_node_id = np.argmax(node_remaining_gpus)
+          # print(f"reclaiming node --> {reclaim_node_id}, remaining gpus = {node_remaining_gpus[reclaim_node_id]}")
+          # find jobs mapped to this node
+          reclaim_jobs = []
+          for reclaim_jobname in single_placed_jobs.keys():
+            if reclaim_node_id in single_placed_jobs[reclaim_jobname]:
+              reclaim_jobs.append(reclaim_jobname)
+          for reclaim_jobname in reclaim_jobs:
+            gpus = single_placed_jobs.pop(reclaim_jobname)
+            # print(f"evicting {reclaim_jobname} -> {gpus}")
+            for gpu_id in gpus:
+              node_remaining_gpus[gpu_id] += 1
+          assert node_remaining_gpus[reclaim_node_id] == ngpus_per_node, "eviction assert"
+          # loop again to find this freed machine
+          cur_node_id = max_num_nodes - 1
+      # ensure all nodes got placed
+      assert nnodes == 0, f"couldnt place -- {jobname} -> {job_allocs[jobname]}"
+      distr_placed_jobs[jobname] = job_placement
+    # print(f"Distributed placements: {distr_placed_jobs}")
+    
+    # alloc any single node jobs from first node ID
+    def get_job_order(joblist):
+      return sorted(joblist, key=lambda x : job_allocs.get(jobname, (0, 0))[1], reverse=True)
+    joblist = [jobname for jobname in single_node_jobs if jobname not in single_placed_jobs]
+    # priority queue with prio = ngpus
+    job_order = get_job_order(joblist)
+    while len(job_order) > 0:
+      jobname = job_order.pop(0)
+      nnodes, ngpus = job_allocs.get(jobname, (0, 0))
+      if ngpus == 0:
+        single_placed_jobs[jobname] = None
         continue
 
-      # check if num_full_nodes number of nodes are available
-      if num_full_nodes > 0:
-        num_checked = 0
-        while num_checked < max_num_nodes and num_full_nodes > 0:
-          node_gpus = node_remaining_gpus[node_id]
-          # can take full node
-          if node_gpus == ngpus_per_node:
-            node_remaining_gpus[node_id] -= ngpus_per_node
-            num_gpus -= ngpus_per_node
-            job_placement.extend([node_id] * ngpus_per_node)
-            num_full_nodes -= 1
-          node_id = (node_id + 1) % max_num_nodes
-          num_checked += 1
-
-      # alloc any needed gpus anywhere
-      while num_gpus > 0:
-        node_gpus = node_remaining_gpus[node_id]
-        if node_gpus != 0:
-          can_take_gpus = min(num_gpus, node_gpus)
-          num_gpus -= can_take_gpus
-          node_remaining_gpus[node_id] -= can_take_gpus
-          job_placement.extend([node_id] * can_take_gpus)
-        # advance node pointer
-        node_id = (node_id + 1) % max_num_nodes
-      # record placement
-      placements[jobname] = job_placement
-      # advance cur_node_id ptr
-      cur_node_id = node_id
-        
-    return placements
+      # allocate nodes from first node ID
+      # prefer packing --> seek node id with min(ngpus) remaining after alloc
+      job_placement = []
+      idxs = np.arange(max_num_nodes)
+      filter = node_remaining_gpus >= ngpus
+      if not any(filter):
+        # reclaim some gpus by evicting fewest gpus
+        reclaim_cand_idxs = idxs[node_remaining_gpus < ngpus]
+        reclaim_ordering = sorted(reclaim_cand_idxs, key=lambda x: (ngpus - node_remaining_gpus[x]))
+        reclaim_node_id = reclaim_ordering[0]
+        # evict some jobs from this node
+        # print(f"reclaiming node --> {reclaim_node_id}")
+        # find jobs mapped to this node
+        reclaim_jobs = []
+        for reclaim_jobname in single_placed_jobs.keys():
+          if reclaim_node_id in single_placed_jobs[reclaim_jobname]:
+            reclaim_jobs.append(reclaim_jobname)
+        # sort from smallest to largest job in node
+        reclaim_jobs = sorted(reclaim_jobs, key=lambda x : job_allocs[x][1])
+        while node_remaining_gpus[reclaim_node_id] < ngpus and len(reclaim_jobs) > 0:
+          reclaim_jobname = reclaim_jobs.pop(0)
+          gpus = single_placed_jobs.pop(reclaim_jobname)
+          # print(f"evicting {reclaim_jobname} -> {gpus}")
+          for gpu_id in gpus:
+            node_remaining_gpus[gpu_id] += 1
+          # add back to placement queue
+          job_order.append(reclaim_jobname)
+        # update placement queue with priorities
+        job_order = get_job_order(job_order)
+        # print(f"new job order -> {job_order}")
+        assert node_remaining_gpus[reclaim_node_id] >= ngpus, "eviction assert"
+        filter = node_remaining_gpus >= ngpus
+      assert any(filter), "failed to find a node to place: {jobname}; allocs = {job_allocs}, prev_allocs = {prev_allocs}, node_remaining_gpus = {node_remaining_gpus}"
+      # simple packing algo -- most full valid placement
+      place_idxs = idxs[filter]
+      place_idxs = sorted(place_idxs, key=lambda x: node_remaining_gpus[x])
+      place_idx = place_idxs[0]
+      job_placement.extend([int(place_idx)] * ngpus)
+      node_remaining_gpus[place_idx] -= ngpus
+      single_placed_jobs[jobname] = job_placement
+    # print(f"Single node placements: {single_placed_jobs}")
+    placed_jobs = distr_placed_jobs
+    placed_jobs.update(single_placed_jobs)
+    return placed_jobs
 
   def _compute_goodputs(self, job_info, cluster_name, num_nodes, num_replicas):
     speedup_fn = job_info.speedup_fn.get(cluster_name, None)
@@ -378,15 +455,7 @@ class PolluxMIPPolicy(object):
         cluster_name, alloc = v
         job_placements[k] = (cluster_name, cluster_job_placements[cluster_name][k])
 
-    return job_placements
-
-  # allocs: request for resources of type [jobname -> {cluster, (num_nodes, num_gpus)}]
-  # prev_placements: [jobname -> {cluster, [gpu0, gpu1, gpu2, ...]}]
-  def alloc_to_placement(self, allocs, prev_allocs, nodes):
-    # reflect no-alloc actions first
-    for jobname, alloc in allocs.items():
-      if alloc[0] is None:
-
+    return job_placements, None
 
   def optimize_mip_inv(self, jobs, nodes, prev_allocations):
     np.set_printoptions(suppress=True)
@@ -512,23 +581,27 @@ class PolluxMIPPolicy(object):
     for cluster in self.cluster_ordering:
       node_remaining_gpus = np.asarray([node.resources["nvidia.com/gpu"] for idx, node in nodes[cluster].items()], dtype=np.uint32)
       if cluster in cluster_allocs:
-        cluster_job_placements[cluster] = self.alloc_to_placement(cluster, cluster_allocs[cluster], node_remaining_gpus)
+        cluster_job_placements[cluster] = self.alloc_to_placement_smart(cluster, cluster_allocs[cluster], prev_allocations, node_remaining_gpus)
       else:
         cluster_job_placements[cluster] = dict()
     
-    # merge allocs
+    # merge allocs and rename each GPU ID to full k8s node names
     job_placements = {}
     for k, v in job_allocs.items():
       if v is None:
-        job_placements[k] = (None, ())
+        job_placements[k] = []
       else:
-        cluster_name, alloc = v
-        job_placements[k] = (cluster_name, cluster_job_placements[cluster_name][k])
+        cluster_name, _ = v
+        placement = cluster_job_placements[cluster_name][k]
+        new_placement = []
+        for gpu_id in placement:
+          node_name = NODE_TO_ID_MAP[cluster_name][gpu_id]
+          new_placement.append(node_name)
+        job_placements[k] = new_placement
+    
     # log placements to stdout
-    # print(f"Placements: {job_placements}")
-
-    return job_placements
-
+    LOG.info(f"Placements: {job_placements}")
+    return job_placements, None
 
   # alternate formulation with speedups scaled for reallocation
   # cluster_num_gpus = (num_slow_gpus, num_fast_gpus)
@@ -830,6 +903,8 @@ class PolluxMIPPolicy(object):
     # TODO :: jobs[i].speedup_fn is not a map : gpu_type -> gpu_speedup_fn
     if DEBUG_PHOEBE:
       for job_name in jobs.keys():
+        if isinstance(jobs[job_name].speedup_fn, dict):
+          continue
         chosen_cluster = "dgx"
         speedup_fns = dict()
         for cluster in self.cluster_ordering:
@@ -844,11 +919,13 @@ class PolluxMIPPolicy(object):
         cluster_num_gpus[cluster] = 0
         for idx, node_info in cluster_nodes.items():
           cluster_num_gpus[cluster] += node_info.resources['nvidia.com/gpu']
-    print(f"Optimize: cluster_num_nodes: {cluster_num_nodes}, cluster_num_gpus: {cluster_num_gpus}")
-    print(f"Alloc configs: {alloc_configs}")
+    LOG.info(f"Optimize: cluster_num_nodes: {cluster_num_nodes}, cluster_num_gpus: {cluster_num_gpus}")
+    LOG.info(f"Alloc configs: {alloc_configs}")
+    LOG.info(f"Fairness knob: p = {self.p_fairness}")
     if self.p_fairness > 0:
       return self.optimize_mip(jobs, new_nodes, base_allocations)
     elif self.p_fairness < 0:
       return self.optimize_mip_inv(jobs, new_nodes, base_allocations)
     else:
-      print(f"Invalid p value : {self.p_fairness}")
+      LOG.error(f"Invalid p value : {self.p_fairness}")
+      return None

@@ -119,5 +119,4 @@ def test_unusable_node():
   assert sum(len(alloc) for alloc in allocations.values()) == 2
 
 if __name__ == "__main__":
-  for i in [8]:
-    test_optimize(1, i)
+  test_optimize(1, 8)

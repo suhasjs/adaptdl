@@ -17,14 +17,15 @@ FROM python:3.8
 WORKDIR /root/adaptdl
 
 COPY adaptdl adaptdl
-COPY sched sched
 COPY cli/bin/adaptdl cli/bin/adaptdl
-RUN apt install libjpeg8-dev zlib1g-dev
+RUN apt-get install libjpeg-dev zlib1g-dev -y
 
 RUN cd adaptdl && python3 setup.py bdist_wheel
-RUN cd sched && python3 setup.py bdist_wheel
 ARG ADAPTDL_VERSION=0.0.0
 RUN ADAPTDL_VERSION=${ADAPTDL_VERSION} pip install adaptdl/dist/*.whl
+
+COPY sched sched
+RUN cd sched && python3 setup.py bdist_wheel
 RUN ADAPTDL_VERSION=${ADAPTDL_VERSION} pip install sched/dist/*.whl
 
 WORKDIR /root

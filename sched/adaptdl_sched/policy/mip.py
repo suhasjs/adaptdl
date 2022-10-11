@@ -5,6 +5,7 @@ import cvxpy as cp
 import logging
 import numpy as np
 import time as time
+from adaptdl_sched.policy.speedup import SpeedupFunction
 
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
@@ -39,6 +40,8 @@ CLUSTER_NUM_GPUS = {
   "rtx" : 8,
   "quad" : 4,
 }
+# do not consider these nodes for scheduling
+BLACKLIST_NODES = ["phoebe-mgmt", "phoquad1", "phodgx1", "phodgx2"]
 
 class MIPPolicy(object):
   # ensure sign(p_fairness) != sign(lambda_*)
@@ -92,6 +95,8 @@ class MIPPolicy(object):
     # get gpu type -> nodenames map
     self.cluster_node_ordering = dict()
     for node_name, node_resources in nodes.items():
+      if node_name in BLACKLIST_NODES:
+          continue
       node_gpu_type = NODE_TO_CLUSTER_MAP.get(node_name, None)
       if node_gpu_type is None:
         print(f"Invalid node gpu type. Node = {node_gpu_type} -> {node_resources}")
@@ -267,10 +272,12 @@ class MIPPolicy(object):
     speedup_fn = job_info.speedup_fn.get(cluster_name, None)
     if speedup_fn is None and not self.project_throughputs:
       return None
-    if speedup_fn is not None:
+    if speedup_fn is not None and isinstance(speedup_fn, SpeedupFunction):
       # speedup_fn exists for job in `cluster_name` cluster
       goodput_arr = np.asarray(speedup_fn.get_goodput(num_nodes.astype(np.float32), num_replicas.astype(np.float32)), dtype=np.float32)
       return goodput_arr
+    else:
+      return None
 
     # self.project_throughputs and speedup_fn is None:
     # check if some speedup fn is not None
@@ -279,8 +286,8 @@ class MIPPolicy(object):
       return None
     # take any speedup_fn
     dest_cluster = [k for k in job_info.speedup_fn.keys() if job_info.speedup_fn[k] is not None][0]
-    is_dest_cluster_4gpu = self.cluster_ngpus_per_node[dest_cluster] == 4
-    is_src_cluster_4gpu = self.cluster_ngpus_per_node[cluster_name] == 4
+    is_dest_cluster_4gpu = CLUSTER_NUM_GPUS[dest_cluster] == 4
+    is_src_cluster_4gpu = CLUSTER_NUM_GPUS[cluster_name] == 4
     # both 8-GPU:
     if is_src_cluster_4gpu and is_dest_cluster_4gpu:
       translated_num_nodes, translated_num_replicas = num_nodes, num_replicas
@@ -294,9 +301,10 @@ class MIPPolicy(object):
       translated_num_replicas = num_replicas.astype(np.uint32)
     elif not is_src_cluster_4gpu and not is_dest_cluster_4gpu:
       translated_num_nodes, translated_num_replicas = num_nodes, num_replicas
+    
     # remove configs that exceed cluster size
-    max_dest_cluster_size = self.cluster_ngpus_per_node[dest_cluster] * self.cluster_num_nodes[dest_cluster]
-    valid_dest_configs_idxs = (translated_num_replicas < max_dest_cluster_size) & (translated_num_nodes < self.cluster_num_nodes[dest_cluster])
+    max_dest_cluster_size = CLUSTER_NUM_GPUS[dest_cluster] * len(NODE_TO_ID_MAP[dest_cluster])
+    valid_dest_configs_idxs = (translated_num_replicas < max_dest_cluster_size) & (translated_num_nodes < len(NODE_TO_ID_MAP[dest_cluster]))
     # multiplier for throughput projection
     multiplier = job_info.cluster_throughput_ratios[cluster_name][dest_cluster]
 
@@ -899,11 +907,15 @@ class MIPPolicy(object):
     return job_allocs, cluster_allocs
 
   def optimize(self, jobs, nodes, base_allocations, node_template):
+    print(f"Input nodes: {nodes}")
+    print(f"Input jobs: {jobs}")
+    print(f"Input base_allocations: {base_allocations}")
     new_nodes, alloc_configs = self.get_valid_configs(nodes)
+    print(f"Fixed nodes: {new_nodes}")
     # TODO :: jobs[i].speedup_fn is not a map : gpu_type -> gpu_speedup_fn
     if DEBUG_PHOEBE:
       # blacklist all other gpu types except `chosen_cluster`
-      chosen_cluster = "dgx"
+      chosen_cluster = "rtx"
       new_new_nodes = dict()
       new_new_nodes[chosen_cluster] = new_nodes[chosen_cluster]
       new_nodes = new_new_nodes
@@ -923,7 +935,7 @@ class MIPPolicy(object):
       cluster_num_nodes[cluster] = len(new_nodes[cluster])
       cluster_num_gpus[cluster] = 0
       for idx, node_info in cluster_nodes.items():
-        cluster_num_gpus[cluster] += node_info.resources['nvidia.com/gpu']
+        cluster_num_gpus[cluster] += node_info.resources.get('nvidia.com/gpu', 0)
     LOG.info(f"Optimize: cluster_num_nodes: {cluster_num_nodes}, cluster_num_gpus: {cluster_num_gpus}")
     LOG.info(f"Alloc configs: {alloc_configs}")
     LOG.info(f"Fairness knob: p = {self.p_fairness}")

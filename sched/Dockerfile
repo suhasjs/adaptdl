@@ -19,6 +19,7 @@ WORKDIR /root/adaptdl
 COPY adaptdl adaptdl
 COPY sched sched
 COPY cli/bin/adaptdl cli/bin/adaptdl
+RUN apt install libjpeg8-dev zlib1g-dev
 
 RUN cd adaptdl && python3 setup.py bdist_wheel
 RUN cd sched && python3 setup.py bdist_wheel

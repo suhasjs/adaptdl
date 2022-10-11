@@ -40,12 +40,12 @@ CLUSTER_NUM_GPUS = {
   "quad" : 4,
 }
 
-class PolluxMIPPolicy(object):
+class MIPPolicy(object):
   # ensure sign(p_fairness) != sign(lambda_*)
   def __init__(self, 
          p_fairness = -1,
          lambda_a=0,
-         lambda_n=1,
+         lambda_n=1.2,
          project_throughputs=True,
          share_max_replicas=False,
          timeshare_penalty_window=None):
@@ -902,23 +902,28 @@ class PolluxMIPPolicy(object):
     new_nodes, alloc_configs = self.get_valid_configs(nodes)
     # TODO :: jobs[i].speedup_fn is not a map : gpu_type -> gpu_speedup_fn
     if DEBUG_PHOEBE:
+      # blacklist all other gpu types except `chosen_cluster`
+      chosen_cluster = "dgx"
+      new_new_nodes = dict()
+      new_new_nodes[chosen_cluster] = new_nodes[chosen_cluster]
+      new_nodes = new_new_nodes
+      self.cluster_ordering = [chosen_cluster]
+
+      # convert jobs[i].speedup_fn to a dict: gpu_type -> gpu_speedup_fn
       for job_name in jobs.keys():
         if isinstance(jobs[job_name].speedup_fn, dict):
           continue
-        chosen_cluster = "dgx"
         speedup_fns = dict()
-        for cluster in self.cluster_ordering:
-          speedup_fns[cluster] = None
-          if cluster == chosen_cluster:
-            speedup_fns[cluster] = jobs[job_name].speedup_fn
+        speedup_fns[chosen_cluster] = jobs[job_name].speedup_fn
         jobs[job_name].speedup_fn = speedup_fns
-      
-      cluster_num_nodes, cluster_num_gpus = dict(), dict()
-      for cluster, cluster_nodes in new_nodes.items():
-        cluster_num_nodes[cluster] = len(new_nodes[cluster])
-        cluster_num_gpus[cluster] = 0
-        for idx, node_info in cluster_nodes.items():
-          cluster_num_gpus[cluster] += node_info.resources['nvidia.com/gpu']
+    
+    # get size of clusters
+    cluster_num_nodes, cluster_num_gpus = dict(), dict()
+    for cluster, cluster_nodes in new_nodes.items():
+      cluster_num_nodes[cluster] = len(new_nodes[cluster])
+      cluster_num_gpus[cluster] = 0
+      for idx, node_info in cluster_nodes.items():
+        cluster_num_gpus[cluster] += node_info.resources['nvidia.com/gpu']
     LOG.info(f"Optimize: cluster_num_nodes: {cluster_num_nodes}, cluster_num_gpus: {cluster_num_gpus}")
     LOG.info(f"Alloc configs: {alloc_configs}")
     LOG.info(f"Fairness knob: p = {self.p_fairness}")

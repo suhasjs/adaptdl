@@ -13,13 +13,12 @@
 # limitations under the License.
 
 
-import pytest
 import time
 
 from collections import Counter
 from datetime import datetime, timedelta
 from adaptdl.goodput import GoodputFunction, PerfParams, GradParams
-from adaptdl_sched.policy.pollux_mip import PolluxMIPPolicy
+from adaptdl_sched.policy.mip import MIPPolicy
 from adaptdl_sched.policy.speedup import SpeedupFunction
 from adaptdl_sched.policy.utils import JobInfo, NodeInfo
 
@@ -43,7 +42,7 @@ def test_optimize(num_nodes, total_devices=8):
   jobs={}
   # Add a few jobs.
   job_resources={"nvidia.com/gpu": 1, "pods": 1}
-  for i in range(2):
+  for i in range(3):
     creation_timestamp=now,
     max_replicas=8
     min_replicas=0
@@ -63,9 +62,10 @@ def test_optimize(num_nodes, total_devices=8):
            'rdma/hca': num_devices}
   nodes = {"phodgx"+str(i+1): NodeInfo(node_resources, preemptible=False)
        for i in range(num_nodes)}
+  print(f"Nodes: {nodes}")
   # Add a node template.
   node_template = NodeInfo(node_resources, preemptible=True)
-  policy = PolluxMIPPolicy()
+  policy = MIPPolicy()
   prev_allocs = {}
   for i in range(3):
     start = time.time()
@@ -108,7 +108,7 @@ def test_unusable_node():
     2: JobInfo({"gpu": 1, "cpu": 1000, "pods": 1}, speedup_fn,
           now + timedelta(minutes=2), min_replicas, max_replicas=1),
   }
-  policy = PolluxMIPPolicy()
+  policy = MIPPolicy()
   allocations, desired_nodes = policy.optimize(jobs, nodes, {}, template)
   print(f"Allocations: {allocations}")
   # Check that more nodes are asked for.
@@ -119,4 +119,4 @@ def test_unusable_node():
   assert sum(len(alloc) for alloc in allocations.values()) == 2
 
 if __name__ == "__main__":
-  test_optimize(1, 8)
+  test_optimize(2, 16)

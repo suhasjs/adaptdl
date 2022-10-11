@@ -277,7 +277,8 @@ class MIPPolicy(object):
       goodput_arr = np.asarray(speedup_fn.get_goodput(num_nodes.astype(np.float32), num_replicas.astype(np.float32)), dtype=np.float32)
       return goodput_arr
     else:
-      return None
+      # assume linear scalability
+      return num_replicas
 
     # self.project_throughputs and speedup_fn is None:
     # check if some speedup fn is not None
@@ -534,7 +535,7 @@ class MIPPolicy(object):
         valid_nnodes, valid_ngpus = alloc_num_nodes[valid_configs], alloc_num_replicas[valid_configs]
         goodput_matrix = cluster_goodput_matrices[cluster]
         valid_configs_goodput = self._compute_goodputs(job, cluster, valid_nnodes, valid_ngpus)
-        # print(f"{jobnames[i]}, {cluster}: {valid_configs_goodput}")
+        print(f"{jobnames[i]}, {cluster}: {valid_configs_goodput}")
         goodput_matrix[i, valid_configs] = valid_configs_goodput
         if valid_nnodes.size == 0:
           nnz_speedups[cluster] = 1

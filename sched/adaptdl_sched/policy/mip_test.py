@@ -22,11 +22,12 @@ from adaptdl_sched.policy.mip import MIPPolicy
 from adaptdl_sched.policy.speedup import SpeedupFunction
 from adaptdl_sched.policy.utils import JobInfo, NodeInfo
 
+
 # using perf params for 4-GPUs cifar10 on phodgx1 (~2m into training)
-def test_optimize(num_nodes, total_devices=8):
-  assert total_devices % num_nodes == 0
-  num_devices = total_devices // num_nodes
-  print("{}x{} nodes:".format(num_nodes, num_devices))
+def test_optimize():
+  num_nodes = 3
+  ngpus_per_node = 8
+  print("{}x{} nodes:".format(num_nodes, ngpus_per_node))
   # Make up a realistic speedup function.
   '''
   perf_params = PerfParams(0.121, 0.00568, 0.0236, 0.00634,
@@ -42,25 +43,27 @@ def test_optimize(num_nodes, total_devices=8):
   jobs={}
   # Add a few jobs.
   job_resources={"nvidia.com/gpu": 1, "pods": 1}
-  for i in range(3):
+  for i in range(2):
     creation_timestamp=now,
-    max_replicas=8
+    max_replicas=24
     min_replicas=0
     key="cifar10-"+str(i)
     jobs[key]=JobInfo(job_resources, speedup_fn, creation_timestamp,
               min_replicas, max_replicas)
-    jobs[key].attained_service = 547.4
-    jobs[key].num_restarts = 2
-    jobs[key].age = 273
+    jobs[key].attained_service = 0.0
+    jobs[key].num_restarts = 0
+    jobs[key].age = 1.2
+  jobs['cifar10-1'].speedup_fn = lambda n, r : r
+  jobs['cifar10-1'].max_replicas = 1
 
   # Add a few nodes == phodgx1
   node_resources = {'cpu': 255345, 
            'ephemeral-storage': 1699655293391,
            'memory': 1081210693632,
-           'nvidia.com/gpu': num_devices, 
+           'nvidia.com/gpu': ngpus_per_node, 
            'pods': 84,
-           'rdma/hca': num_devices}
-  nodes = {"phodgx"+str(i+1): NodeInfo(node_resources, preemptible=False)
+           'rdma/hca': 0}
+  nodes = {"phortx"+str(i+1): NodeInfo(node_resources, preemptible=False)
        for i in range(num_nodes)}
   print(f"Nodes: {nodes}")
   # Add a node template.
@@ -119,4 +122,4 @@ def test_unusable_node():
   assert sum(len(alloc) for alloc in allocations.values()) == 2
 
 if __name__ == "__main__":
-  test_optimize(2, 16)
+  test_optimize()

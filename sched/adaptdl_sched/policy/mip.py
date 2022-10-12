@@ -145,13 +145,28 @@ class MIPPolicy(object):
 
   # cluster_name: cluster name
   # job_allocs: {jobname : (num_nodes, num_gpus)}
-  # prev_placements: {jobname : (cluster, [gpu0, gpu1, gpu2, ...])}
+  # cur_placements: {jobname : (cluster, [gpu0, gpu1, gpu2, ...])}
   # node_remaining_gpus: [gpus_left_in_node_0, gpus_left_in_node_1, .. N-1]
-  def alloc_to_placement_smart(self, cluster_name, job_allocs, prev_allocs, node_remaining_gpus):
+  def alloc_to_placement_smart(self, cluster_name, job_allocs, cur_placements, node_remaining_gpus):
     LOG.info(f"Cluster: {cluster_name}")
     LOG.info(f"Allocs: {job_allocs}")
-    LOG.info(f"Prev Placements: {prev_allocs}")
+    LOG.info(f"Cur Placements: {cur_placements}")
     max_num_nodes = len(node_remaining_gpus)
+
+    # convert node names to node IDs for prev allocs
+    prev_placements = dict()
+    for jobname, placement in cur_placements.items():
+      if len(placement) > 0:
+        old_cluster_name = NODE_TO_CLUSTER_MAP[placement[0]]
+        # migrated between GPU types
+        if old_cluster_name != cluster_name:
+          prev_placements[jobname] = [-1]*len(placement)
+        else:
+          prev_placement = [NODENAME_TO_ID_MAP[cluster_name][node_name] for node_name in placement]
+          prev_placements[jobname] = prev_placement
+      else:
+        prev_placements[jobname] = []
+    
     # determined {jobname : [gpu0, gpu1, gpu2...]}
     placed_jobs = dict()
     # partition into distributed and single-node jobs
@@ -166,16 +181,18 @@ class MIPPolicy(object):
     distr_placed_jobs = dict()
     single_placed_jobs = dict()
     for jobname in job_allocs.keys():
-      prev_gpus = prev_allocs.get(jobname, [])
-      prev_cluster = None if len(prev_gpus) == 0 else NODE_TO_CLUSTER_MAP[prev_gpus[0]]
+      prev_gpus = prev_placements.get(jobname, [])
       _, cur_ngpus = job_allocs.get(jobname, (0, 0))
+      prev_cluster = None
+      # valid allocation in this cluster
+      if len(prev_gpus) > 0 and prev_gpus[0] >= 0:
+        prev_cluster = cluster_name
       if prev_cluster == cluster_name and len(prev_gpus) == cur_ngpus:
         if cur_ngpus < ngpus_per_node:
           single_placed_jobs[jobname] = prev_gpus
         else:
           distr_placed_jobs[jobname] = prev_gpus
-        for node_name in prev_gpus:
-          node_id = NODENAME_TO_ID_MAP[prev_cluster][node_name]
+        for node_id in prev_gpus:
           node_remaining_gpus[node_id] -= 1
           # print(f"Preserving placement: {jobname} -> {cluster_name}, {prev_gpus}")
     
@@ -208,8 +225,7 @@ class MIPPolicy(object):
           for reclaim_jobname in reclaim_jobs:
             gpus = single_placed_jobs.pop(reclaim_jobname)
             # print(f"evicting {reclaim_jobname} -> {gpus}")
-            for node_name in gpus:
-              node_id = NODENAME_TO_ID_MAP[prev_cluster][node_name]
+            for node_id in gpus:
               node_remaining_gpus[node_id] += 1
           assert node_remaining_gpus[reclaim_node_id] == ngpus_per_node, "eviction assert"
           # loop again to find this freed machine
@@ -242,13 +258,12 @@ class MIPPolicy(object):
         reclaim_cand_idxs = idxs[node_remaining_gpus < ngpus]
         reclaim_ordering = sorted(reclaim_cand_idxs, key=lambda x: (ngpus - node_remaining_gpus[x]))
         reclaim_node_id = reclaim_ordering[0]
-        reclaim_node_name = NODENAME_TO_ID_MAP[cluster_name][reclaim_node_id]
         # evict some jobs from this node
         # print(f"reclaiming node --> {reclaim_node_id}")
         # find jobs mapped to this node
         reclaim_jobs = []
         for reclaim_jobname in single_placed_jobs.keys():
-          if reclaim_node_name in single_placed_jobs[reclaim_jobname]:
+          if reclaim_node_id in single_placed_jobs[reclaim_jobname]:
             reclaim_jobs.append(reclaim_jobname)
         # sort from smallest to largest job in node
         reclaim_jobs = sorted(reclaim_jobs, key=lambda x : job_allocs[x][1])
@@ -276,6 +291,7 @@ class MIPPolicy(object):
     # print(f"Single node placements: {single_placed_jobs}")
     placed_jobs = distr_placed_jobs
     placed_jobs.update(single_placed_jobs)
+    
     return placed_jobs
 
   def _compute_goodputs(self, job_info, cluster_name, num_nodes, num_replicas):

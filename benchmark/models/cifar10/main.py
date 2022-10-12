@@ -49,7 +49,7 @@ transform_test = transforms.Compose([
 
 trainset = torchvision.datasets.CIFAR10(root="/pollux/datasets/cifar", train=True, download=True, transform=transform_train)
 trainloader = adaptdl.torch.AdaptiveDataLoader(trainset, batch_size=args.bs, shuffle=True, num_workers=2, drop_last=True)
-trainloader.autoscale_batch_size(4096, local_bsz_bounds=(32, 4096),
+trainloader.autoscale_batch_size(4096, local_bsz_bounds=(32, 1024),
                                  gradient_accumulation=True)
 
 validset = torchvision.datasets.CIFAR10(root="/pollux/datasets/cifar", train=False, download=True, transform=transform_test)

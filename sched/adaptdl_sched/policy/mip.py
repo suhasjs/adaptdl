@@ -29,10 +29,16 @@ NODE_TO_CLUSTER_MAP = {
 
 DEBUG_PHOEBE = True
 
-NODE_TO_ID_MAP = {
+ID_TO_NODENAME_MAP = {
   "dgx" : {0 :"phodgx1", 1 : "phodgx2"},
   "rtx" : {0 : "phortx1", 1 : "phortx2", 2 : "phortx3"},
   "quad" : {0 : "phoquad1"}
+}
+
+NODENAME_TO_ID_MAP = {
+        "dgx" : {"phodgx1" : 0, "phodgx2": 1},
+        "rtx" : {"phortx1" : 0, "phortx2" : 1, "phortx3" : 2},
+        "quad" : {"phoquad1" : 0}
 }
 
 CLUSTER_NUM_GPUS = {
@@ -144,7 +150,7 @@ class MIPPolicy(object):
   def alloc_to_placement_smart(self, cluster_name, job_allocs, prev_allocs, node_remaining_gpus):
     LOG.info(f"Cluster: {cluster_name}")
     LOG.info(f"Allocs: {job_allocs}")
-    LOG.info(f"Prev Placements: {job_allocs}")
+    LOG.info(f"Prev Placements: {prev_allocs}")
     max_num_nodes = len(node_remaining_gpus)
     # determined {jobname : [gpu0, gpu1, gpu2...]}
     placed_jobs = dict()
@@ -160,14 +166,16 @@ class MIPPolicy(object):
     distr_placed_jobs = dict()
     single_placed_jobs = dict()
     for jobname in job_allocs.keys():
-      prev_cluster, prev_gpus = prev_allocs.get(jobname, (None, []))
+      prev_gpus = prev_allocs.get(jobname, [])
+      prev_cluster = None if len(prev_gpus) == 0 else NODE_TO_CLUSTER_MAP[prev_gpus[0]]
       _, cur_ngpus = job_allocs.get(jobname, (0, 0))
       if prev_cluster == cluster_name and len(prev_gpus) == cur_ngpus:
         if cur_ngpus < ngpus_per_node:
           single_placed_jobs[jobname] = prev_gpus
         else:
           distr_placed_jobs[jobname] = prev_gpus
-        for node_id in prev_gpus:
+        for node_name in prev_gpus:
+          node_id = NODENAME_TO_ID_MAP[prev_cluster][node_name]
           node_remaining_gpus[node_id] -= 1
           # print(f"Preserving placement: {jobname} -> {cluster_name}, {prev_gpus}")
     
@@ -200,8 +208,9 @@ class MIPPolicy(object):
           for reclaim_jobname in reclaim_jobs:
             gpus = single_placed_jobs.pop(reclaim_jobname)
             # print(f"evicting {reclaim_jobname} -> {gpus}")
-            for gpu_id in gpus:
-              node_remaining_gpus[gpu_id] += 1
+            for node_name in gpus:
+              node_id = NODENAME_TO_ID_MAP[prev_cluster][node_name]
+              node_remaining_gpus[node_id] += 1
           assert node_remaining_gpus[reclaim_node_id] == ngpus_per_node, "eviction assert"
           # loop again to find this freed machine
           cur_node_id = max_num_nodes - 1
@@ -233,12 +242,13 @@ class MIPPolicy(object):
         reclaim_cand_idxs = idxs[node_remaining_gpus < ngpus]
         reclaim_ordering = sorted(reclaim_cand_idxs, key=lambda x: (ngpus - node_remaining_gpus[x]))
         reclaim_node_id = reclaim_ordering[0]
+        reclaim_node_name = NODENAME_TO_ID_MAP[cluster_name][reclaim_node_id]
         # evict some jobs from this node
         # print(f"reclaiming node --> {reclaim_node_id}")
         # find jobs mapped to this node
         reclaim_jobs = []
         for reclaim_jobname in single_placed_jobs.keys():
-          if reclaim_node_id in single_placed_jobs[reclaim_jobname]:
+          if reclaim_node_name in single_placed_jobs[reclaim_jobname]:
             reclaim_jobs.append(reclaim_jobname)
         # sort from smallest to largest job in node
         reclaim_jobs = sorted(reclaim_jobs, key=lambda x : job_allocs[x][1])
@@ -304,8 +314,8 @@ class MIPPolicy(object):
       translated_num_nodes, translated_num_replicas = num_nodes, num_replicas
     
     # remove configs that exceed cluster size
-    max_dest_cluster_size = CLUSTER_NUM_GPUS[dest_cluster] * len(NODE_TO_ID_MAP[dest_cluster])
-    valid_dest_configs_idxs = (translated_num_replicas < max_dest_cluster_size) & (translated_num_nodes < len(NODE_TO_ID_MAP[dest_cluster]))
+    max_dest_cluster_size = CLUSTER_NUM_GPUS[dest_cluster] * len(ID_TO_NODENAME_MAP[dest_cluster])
+    valid_dest_configs_idxs = (translated_num_replicas < max_dest_cluster_size) & (translated_num_nodes < len(ID_TO_NODENAME_MAP[dest_cluster]))
     # multiplier for throughput projection
     multiplier = job_info.cluster_throughput_ratios[cluster_name][dest_cluster]
 
@@ -352,7 +362,7 @@ class MIPPolicy(object):
     for k, k_nodes in nodes.items():
       num_gpus[k] = 0
       for node_idx, node in k_nodes.items():
-        num_gpus[k] += node.resources["nvidia.com/gpu"]
+        num_gpus[k] += node.resources.get("nvidia.com/gpu", 0)
     num_configs = {k : len(v[1]) for k, v in self.configs.items()}
     total_num_configs = sum(num_configs.values())
 
@@ -449,7 +459,7 @@ class MIPPolicy(object):
     # cluster-specific job placements
     cluster_job_placements = dict()
     for cluster in self.cluster_ordering:
-      node_remaining_gpus = np.asarray([node.resources["nvidia.com/gpu"] for idx, node in nodes[cluster].items()], dtype=np.uint32)
+      node_remaining_gpus = np.asarray([node.resources.get("nvidia.com/gpu", 0) for idx, node in nodes[cluster].items()], dtype=np.uint32)
       if cluster in cluster_allocs:
         cluster_job_placements[cluster] = self.alloc_to_placement(cluster, cluster_allocs[cluster], node_remaining_gpus)
       else:
@@ -588,7 +598,7 @@ class MIPPolicy(object):
     # cluster-specific job placements
     cluster_job_placements = dict()
     for cluster in self.cluster_ordering:
-      node_remaining_gpus = np.asarray([node.resources["nvidia.com/gpu"] for idx, node in nodes[cluster].items()], dtype=np.uint32)
+      node_remaining_gpus = np.asarray([node.resources.get("nvidia.com/gpu", 0) for idx, node in nodes[cluster].items()], dtype=np.uint32)
       if cluster in cluster_allocs:
         cluster_job_placements[cluster] = self.alloc_to_placement_smart(cluster, cluster_allocs[cluster], prev_allocations, node_remaining_gpus)
       else:
@@ -604,13 +614,13 @@ class MIPPolicy(object):
         placement = cluster_job_placements[cluster_name][k]
         new_placement = []
         for gpu_id in placement:
-          node_name = NODE_TO_ID_MAP[cluster_name][gpu_id]
+          node_name = ID_TO_NODENAME_MAP[cluster_name][gpu_id]
           new_placement.append(node_name)
         job_placements[k] = new_placement
     
     # log placements to stdout
     LOG.info(f"Placements: {job_placements}")
-    return job_placements, None
+    return job_placements, len(nodes)
 
   # alternate formulation with speedups scaled for reallocation
   # cluster_num_gpus = (num_slow_gpus, num_fast_gpus)

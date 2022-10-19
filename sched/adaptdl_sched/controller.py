@@ -24,6 +24,8 @@ import logging
 import adaptdl_sched.k8s_templates as templates
 import adaptdl_sched.config as config
 
+from adaptdl.sched_hints import NODE_TO_CLUSTER_MAP
+
 from datetime import datetime, timezone
 from prometheus_client import Counter, Summary
 
@@ -336,6 +338,8 @@ class AdaptDLController(object):
     async def _create_pod(self, job_metadata, pod_template,
                           allocation, group, rank):
         node = await self._core_api.read_node(allocation[rank])
+        pod_node_name = allocation[rank]
+        pod_gpu_type = NODE_TO_CLUSTER_MAP.get(pod_node_name, f"invalid_hostname:{pod_node_name}")
         pod = copy.deepcopy(pod_template)
         pod["apiVersion"] = "v1"
         pod["kind"] = "Pod"
@@ -403,6 +407,10 @@ class AdaptDLController(object):
             container["env"].append({
                 "name": "ADAPTDL_SUPERVISOR_URL",
                 "value": config.get_supervisor_url(),
+            })
+            container["env"].append({
+                "name": "ADAPTDL_GPU_TYPE",
+                "value": pod_gpu_type,
             })
             resources = container.get("resources", {})
             if not resources.get("limits", {}).get("nvidia.com/gpu"):

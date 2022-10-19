@@ -24,7 +24,7 @@ import adaptdl.checkpoint
 import adaptdl.collective
 import adaptdl.env
 from adaptdl.goodput import GoodputFunction, fit_perf_params
-from adaptdl.sched_hints import SCHED_HINTS, PERF_PARAMS, post_sched_hints
+from adaptdl.sched_hints import SCHED_HINTS, PERF_PARAMS, NODE_TO_CLUSTER_MAP, post_sched_hints
 
 
 def report_train_metrics(epoch, loss, **kwargs):
@@ -68,7 +68,6 @@ def profile_sync_time(sync_time):
 
 _PREV_REPORT = None
 
-
 def profile_step_commit(epoch, batch_size, accumulation_step=False):
     global _PREV_REPORT
     state = _metrics_state()
@@ -76,13 +75,24 @@ def profile_step_commit(epoch, batch_size, accumulation_step=False):
     num_nodes = adaptdl.env.num_nodes()
     num_replicas = adaptdl.env.num_replicas()
     key = (num_nodes, num_replicas, state.atomic_bsz)
+
+    # create new table for new GPU type profiles
+    gpu_type = adaptdl.env.gpu_type()
+    if gpu_type not in state.profile_dict:
+        state.profile_dict[gpu_type] = collections.defaultdict(collections.Counter)
+
     if accumulation_step:
         state.profile[key]["accum_step_time"] += step_time
         state.profile[key]["accum_count"] += 1
+        state.profile_dict[gpu_type][key]["accum_step_time"] += step_time
+        state.profile_dict[gpu_type][key]["accum_count"] += 1
     else:
         state.profile[key]["optim_step_time"] += step_time
         state.profile[key]["optim_sync_time"] += state.sync_time
         state.profile[key]["optim_count"] += 1
+        state.profile_dict[gpu_type][key]["optim_step_time"] += step_time
+        state.profile_dict[gpu_type][key]["optim_sync_time"] += state.sync_time
+        state.profile_dict[gpu_type][key]["optim_count"] += 1
     del state.atomic_bsz
     del state.step_start
     del state.sync_time
@@ -114,24 +124,31 @@ def get_progress():
 
 
 def set_batch_size(init_batch_size, max_batch_size, local_bsz_bounds,
-                   gradient_accumulation):
+                   gradient_accumulation, local_bsz_bounds_dict = None):
     state = _metrics_state()
     state.init_batch_size = init_batch_size
     state.max_batch_size = max_batch_size
     state.local_bsz_bounds = local_bsz_bounds
     state.gradient_accumulation = gradient_accumulation
+    # additional flexibility to set varied local bsz bounds per GPU type
+    if local_bsz_bounds_dict is not None:
+        state.local_bsz_bounds_dict = local_bsz_bounds_dict
 
-def get_goodput_fn():
+def get_goodput_fn(gpu_type=None):
     state = _metrics_state()
     if state.grad_params is None or state.perf_params is None:
         return None
-    return GoodputFunction(state.perf_params, state.grad_params,
-                           state.init_batch_size)
+    if gpu_type is None:
+        return GoodputFunction(state.perf_params, state.grad_params, state.init_batch_size)
+    else:
+        if gpu_type not in state.perf_params_dict:
+            print(f"couldn't find perf params for {gpu_type}")
+            return None
+        else:
+            return GoodputFunction(state.perf_params_dict[gpu_type], state.grad_params, 
+                                   state.init_batch_size)
 
-
-def _fit_perf_params():
-    state = _metrics_state()
-    profile = {k: v for k, v in state.profile.items() if v.get("optim_count")}
+def _fit_perf_params_helper(profile):
     # Convert profile into numpy arrays.
     num_nodes, num_replicas, atomic_bsz = (np.array(k) for k in zip(*profile))
     accum_step_time = np.array([v.get("accum_step_time", 0.0)
@@ -150,9 +167,17 @@ def _fit_perf_params():
     accum_count += optim_count
     accum_step_time /= accum_count
     optim_step_time /= optim_count
-    state.perf_params = fit_perf_params(num_nodes, num_replicas, atomic_bsz,
-                                        accum_step_time, optim_step_time)
+    return fit_perf_params(num_nodes, num_replicas, atomic_bsz, accum_step_time, optim_step_time)
 
+def _fit_perf_params():
+    state = _metrics_state()
+    # fit perf params per GPU type
+    for gpu_type, gpu_profile in state.profile_dict.items():
+        profile = {k: v for k, v in gpu_profile.items() if v.get("optim_count")}
+        state.perf_params_dict[gpu_type] = _fit_perf_params_helper(profile)
+    # fit perf params mixed (for pollux and backward compatibility)
+    profile = {k: v for k, v in state.profile.items() if v.get("optim_count")}
+    state.perf_params = _fit_perf_params_helper(profile)
 
 def _report_sched_hints(epoch, batch_size):
     assert adaptdl.env.replica_rank() == 0
@@ -173,8 +198,13 @@ def _report_sched_hints(epoch, batch_size):
     sched_hints["gradientAccumulation"] = state.gradient_accumulation
     sched_hints["epoch"] = epoch
     sched_hints["batchSize"] = batch_size
+    sched_hints["localBszBoundsDict"] = {k : v for (k, v) in state.local_bsz_bounds_dict.items()}
+    # { gpu_type -> gpu_perf_params }
+    perf_params_dict = dict()
+    for gpu_type, gpu_perf_params in state.perf_params_dict.items():
+        perf_params_dict[gpu_type] = {k: v for (k, v) in zip(PERF_PARAMS.keys(), gpu_perf_params)}
+    sched_hints["perfParamsDict"] = perf_params_dict
     post_sched_hints(sched_hints, adaptdl.env.job_id())
-
 
 class _MetricsState(adaptdl.checkpoint.State):
     def __init__(self):
@@ -187,6 +217,11 @@ class _MetricsState(adaptdl.checkpoint.State):
         self.local_bsz_bounds = None
         self.gradient_accumulation = False
         self.progress = 0.0  # Progress in scale-invariant iterations.
+        # heterogeneity-aware state
+        self.gpu_type = None
+        self.profile_dict = dict()
+        self.local_bsz_bounds_dict = dict()
+        self.perf_params_dict = dict()
 
     def save(self, fileobj):
         pickle.dump(self.profile, fileobj)
@@ -197,6 +232,10 @@ class _MetricsState(adaptdl.checkpoint.State):
         pickle.dump(self.local_bsz_bounds, fileobj)
         pickle.dump(self.gradient_accumulation, fileobj)
         pickle.dump(self.progress, fileobj)
+        pickle.dump(self.gpu_type, fileobj)
+        pickle.dump(self.profile_dict, fileobj)
+        pickle.dump(self.local_bsz_bounds_dict, fileobj)
+        pickle.dump(self.perf_params_dict, fileobj)
 
     def load(self, fileobj):
         self.profile = pickle.load(fileobj)
@@ -207,13 +246,23 @@ class _MetricsState(adaptdl.checkpoint.State):
         self.local_bsz_bounds = pickle.load(fileobj)
         self.gradient_accumulation = pickle.load(fileobj)
         self.progress = pickle.load(fileobj)
-
+        self.gpu_type = pickle.load(fileobj)
+        self.profile_dict = pickle.load(fileobj)
+        self.local_bsz_bounds_dict = pickle.load(fileobj)
+        self.perf_params_dict = pickle.load(fileobj)
 
 def _metrics_state():
     global _METRICS_STATE
     if _METRICS_STATE is None:
         _METRICS_STATE = _MetricsState()
         adaptdl.checkpoint.load_state(_METRICS_STATE)
+        # set GPU type to current GPU type
+        pod_gpu_type = adaptdl.env.gpu_type()
+        if pod_gpu_type not in NODE_TO_CLUSTER_MAP.values():
+            print(f"Error -- invalid gpu type : {pod_gpu_type}")
+        else:
+            print(f"Initialized GPU type --> {pod_gpu_type}")
+            _METRICS_STATE.gpu_type = pod_gpu_type
     return _METRICS_STATE
 
 

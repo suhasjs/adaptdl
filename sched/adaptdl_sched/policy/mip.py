@@ -6,6 +6,7 @@ import logging
 import numpy as np
 import time as time
 from adaptdl_sched.policy.speedup import SpeedupFunction
+from adaptdl.sched_hints import NODE_TO_CLUSTER_MAP
 
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
@@ -17,15 +18,6 @@ CONFIGS_8GPU = (np.asarray([1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8]),
                 np.asarray([1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64]))
 
 ZERO_ALLOC_GAIN = 0.01
-
-NODE_TO_CLUSTER_MAP = {
-  "phodgx1" : "dgx",
-  "phodgx2" : "dgx",
-  "phortx1" : "rtx",
-  "phortx2" : "rtx",
-  "phortx3" : "rtx",
-  "phoquad1" : "quad",
-}
 
 DEBUG_PHOEBE = True
 

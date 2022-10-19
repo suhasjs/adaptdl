@@ -154,21 +154,37 @@ class AdaptDLAllocator(object):
                     # Make sure max_batch_size / replicas >= min_local_bsz
                     if max_batch_size < min_local_bsz * max_replicas:
                         max_replicas = int(max_batch_size / min_local_bsz)
-                perf_params = PerfParams(*[hints["perfParams"][k]
-                                           for k in PERF_PARAMS.keys()])
                 if "gradParams" in hints:
-                    grad_params = GradParams(hints["gradParams"]["norm"],
-                                             hints["gradParams"]["var"])
+                    grad_params = GradParams(hints["gradParams"]["norm"], hints["gradParams"]["var"])
                 else:
                     grad_params = GradParams(0.0, 1.0)
-                goodput_fn = GoodputFunction(perf_params, grad_params,
-                                             hints["initBatchSize"])
-                speedup_fn = SpeedupFunction(
-                    goodput_fn,
-                    hints.get("maxBatchSize"),
-                    hints.get("localBszBounds"),
-                    hints.get("gradientAccumulation", False))
+                
+                # process as heterogeneity-oblivious
+                if POLICY != "mip":
+                    perf_params = PerfParams(*[hints["perfParams"][k]
+                                            for k in PERF_PARAMS.keys()])
+                    goodput_fn = GoodputFunction(perf_params, grad_params,
+                                                hints["initBatchSize"])
+                    speedup_fn = SpeedupFunction(goodput_fn, hints.get("maxBatchSize"), hints.get("localBszBounds"),
+                                                 hints.get("gradientAccumulation", False))
+                else:
+                    # process as heterogeneity-aware
+                    perf_params_dict = hints["perfParamsDict"]
+                    perf_params = dict()
+                    for gpu_type, gpu_perf_params in perf_params_dict.keys():
+                        perf_params[gpu_type] = PerfParams(*[gpu_perf_params[k]
+                                            for k in PERF_PARAMS.keys()])
+                    speedup_fn = dict()
+                    local_bsz_bounds = hints.get("localBszBoundsDict")
+                    print(f"Local Bsz Bounds: {local_bsz_bounds}")
+                    for gpu_type, gpu_perf_params in perf_params.items():
+                        goodput_fn = GoodputFunction(gpu_perf_params, grad_params,
+                                                     hints["initBatchSize"])
+                        gpu_bsz_bounds = local_bsz_bounds.get(gpu_type, local_bsz_bounds)
+                        speedup_fn[gpu_type] = SpeedupFunction(goodput_fn, hints.get("maxBatchSize"), 
+                                                               gpu_bsz_bounds,hints.get("gradientAccumulation", False))
             else:
+                # baseline speedup fns
                 speedup_fn = lambda n, r: r  # noqa: E731
             creation_ts = dateutil.parser.isoparse(
                     job["metadata"]["creationTimestamp"])

@@ -84,12 +84,17 @@ class SpeedupFunction(object):
         assert np.all(np.less_equal(num_nodes, num_replicas))
         assert np.all((num_nodes > 0) == (num_replicas > 0))
 
+        base_goodput, _, _ = self._goodput_fn.optimize(
+                1, 1, max_batch_size=self._max_batch_size,
+                atomic_bsz_range=self._atomic_bsz_range,
+                accumulation=self._accumulation)
+
         goodputs, _, _ = self._goodput_fn.optimize(
                 num_nodes, num_replicas,
                 max_batch_size=self._max_batch_size,
                 atomic_bsz_range=self._atomic_bsz_range,
                 accumulation=self._accumulation)
         if return_speedup_only:
-            return goodputs /  self._base_goodput
+            return goodputs /  base_goodput
         else:
             return goodputs

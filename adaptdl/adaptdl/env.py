@@ -56,6 +56,16 @@ def job_id():
     """
     return os.getenv("ADAPTDL_JOB_ID")
 
+def gpu_type():
+    """
+    A string which uniquely identifies the GPU type allocated to job.
+    ``None`` if not running.
+
+    Returns:
+        str: unique job identifier or ``None``.
+    """
+    return os.getenv("ADAPTDL_GPU_TYPE")
+
 
 def master_addr():
     """

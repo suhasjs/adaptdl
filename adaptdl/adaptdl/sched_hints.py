@@ -25,6 +25,14 @@ from types import MappingProxyType
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
 
+NODE_TO_CLUSTER_MAP = MappingProxyType({
+  "phodgx1" : "dgx",
+  "phodgx2" : "dgx",
+  "phortx1" : "rtx",
+  "phortx2" : "rtx",
+  "phortx3" : "rtx",
+  "phoquad1" : "quad",
+})
 
 # make immutable proxies of globals
 PERF_PARAMS = MappingProxyType(
@@ -39,8 +47,10 @@ SCHED_HINTS = MappingProxyType({'initBatchSize': 0,
                                 'epoch': None,
                                 'batchSize': None,
                                 'gradParams': None,
-                                'perfParams': None})
-
+                                'perfParams': None,
+                                'nodeName' : None, # node reporting hints
+                                'localBszBoundsDict' : None, # script reporting hints for GPU types
+                                'perfParamsDict' : None}) # perf params for each GPU type
 
 def post_sched_hints(sched_hints, job_key):
     url = adaptdl.env.supervisor_url()

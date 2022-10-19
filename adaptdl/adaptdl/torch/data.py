@@ -143,10 +143,16 @@ class AdaptiveDataLoaderHelper(object):
     _training = None  # The AdaptiveDataLoader which loads training data.
     _current = None  # The AdaptiveDataLoader which is currently iterating.
 
+
+    # SUHAS: added knobs to control what gets optimized
+    _adaptive_local_bsz_bounds = False
+    _use_heterogeneity_oblivious_goodput = False
+
     def __init__(self, batch_size=1):
         # Autoscale batch size fields.
         self._max_batch_size = None
         self._local_bsz_bounds = None
+        self._local_bsz_bounds_dict = dict()
         # Create and load state.
         self._state = _AdaptiveDataLoaderState()
         adaptdl.checkpoint.load_state(self._state)
@@ -205,6 +211,14 @@ class AdaptiveDataLoaderHelper(object):
         return self._local_bsz_bounds
 
     @property
+    def local_bsz_bounds_dict(self):
+        """
+        The local batch size bounds on each replica for each GPU type. A pair of integers,
+        (min_local_bsz, max_local_bsz) for each GPU type stored as a dict: GPU type -> bounds.
+        """
+        return self._local_bsz_bounds_dict
+
+    @property
     def current_local_bsz(self):
         """
         The current logical local batch size used by the dataloader.
@@ -232,10 +246,10 @@ class AdaptiveDataLoaderHelper(object):
         if AdaptiveDataLoaderHelper._training is None:
             AdaptiveDataLoaderHelper._training = self
         set_batch_size(self.batch_size, self.max_batch_size,
-                       self.local_bsz_bounds, self._gradient_accumulation)
+                       self.local_bsz_bounds, self._gradient_accumulation, self.local_bsz_bounds_dict)
 
     def autoscale_batch_size(self, max_batch_size, local_bsz_bounds=None,
-                             gradient_accumulation=False):
+                             gradient_accumulation=False, local_bsz_bounds_dict = None):
         """
         Enables adaptive batch size. Should be invoked once after the data
         loader object is created.
@@ -244,6 +258,7 @@ class AdaptiveDataLoaderHelper(object):
             max_batch_size (int): Maximum total batch size allowed.
             local_bsz_bounds (tuple): A pair of (min_local_bsz, max_local_bsz),
                 the min and max local batch sizes allowed on each replica.
+            local_bsz_bounds_dict (dict) : GPU Type -> local_bsz_bounds for GPU type
 
         Raises:
             ValueError: If any of the provided batch size bounds are invalid.
@@ -258,17 +273,34 @@ class AdaptiveDataLoaderHelper(object):
                 local_bsz_bounds[1] < self.batch_size):
             raise ValueError("invalid local_bsz_bounds")
         self._max_batch_size = max_batch_size
+
+        # validate local bsz bounds for each GPU type
         self._local_bsz_bounds = local_bsz_bounds
+        if local_bsz_bounds_dict is not None:
+            for gpu_type, gpu_bounds in local_bsz_bounds_dict.items():
+                if (gpu_bounds[0] is not None and gpu_bounds[0] > self.batch_size or
+                    gpu_bounds[1] is not None and gpu_bounds[1] < self.batch_size):
+                    raise ValueError("invalid local_bsz_bounds for gpu type: {gpu_type} -> {gpu_bounds}, batch size: {self.batch_size}")
+        self._local_bsz_bounds_dict = local_bsz_bounds_dict
         self._gradient_accumulation = gradient_accumulation
         self.train()
 
     def _sync_local_bsz(self):
+        local_bsz_bounds = self._local_bsz_bounds
+        gpu_type = adaptdl.env.gpu_type()
+
+        # tune local bsz bounds if hints provided
+        if self._adaptive_local_bsz_bounds:
+            if gpu_type in self._local_bsz_bounds_dict:
+                LOG.warn("Adapting BSZ bounds: {local_bsz_bounds} -> {self._local_bsz_bounds_dict[gpu_type]}")
+                local_bsz_bounds = self._local_bsz_bounds_dict[gpu_type]
+        
         if "TARGET_BATCH_SIZE" in os.environ:
             eps = 1e-8
             batch_size = int(os.environ["TARGET_BATCH_SIZE"])
             local_bsz = math.ceil(batch_size / adaptdl.env.num_replicas() - eps)
-            if self._local_bsz_bounds is not None and self._local_bsz_bounds[1] is not None:
-                accum_steps = math.ceil(local_bsz / self._local_bsz_bounds[1] - eps) - 1
+            if local_bsz_bounds is not None and local_bsz_bounds[1] is not None:
+                accum_steps = math.ceil(local_bsz / local_bsz_bounds[1] - eps) - 1
             else:
                 accum_steps = 0
             if adaptdl.env.num_replicas() == 1:
@@ -276,7 +308,13 @@ class AdaptiveDataLoaderHelper(object):
             self._state.current_local_bsz = math.ceil(local_bsz / (accum_steps + 1) - eps)
             self._state.accumulation_steps = accum_steps
             return self.current_local_bsz
-        goodput_fn = get_goodput_fn()
+
+        # choose heterogeneity-aware goodput function if configured
+        if not self._use_heterogeneity_oblivious_goodput:
+            goodput_fn = get_goodput_fn(gpu_type)
+        else:
+            goodput_fn = get_goodput_fn()
+
         if self.max_batch_size is None or goodput_fn is None:
             # No autoscale batch size, just divide batch size evenly.
             self._state.current_local_bsz = math.ceil(
@@ -287,7 +325,7 @@ class AdaptiveDataLoaderHelper(object):
             _, atomic_bsz, accum_steps = goodput_fn.optimize(
                 adaptdl.env.num_nodes(), adaptdl.env.num_replicas(),
                 max_batch_size=self._max_batch_size,
-                atomic_bsz_range=self._local_bsz_bounds,
+                atomic_bsz_range=local_bsz_bounds,
                 accumulation=self._gradient_accumulation)
             self._state.current_local_bsz = atomic_bsz
             self._state.accumulation_steps = accum_steps
@@ -296,7 +334,7 @@ class AdaptiveDataLoaderHelper(object):
             suggest_goodput, atomic_bsz, accum_steps = goodput_fn.optimize(
                 adaptdl.env.num_nodes(), adaptdl.env.num_replicas(),
                 max_batch_size=self._max_batch_size,
-                atomic_bsz_range=self._local_bsz_bounds,
+                atomic_bsz_range=local_bsz_bounds,
                 accumulation=self._gradient_accumulation)
             # get current goodput
             current_goodput = goodput_fn(
@@ -310,6 +348,11 @@ class AdaptiveDataLoaderHelper(object):
         self._state.current_local_bsz, self._state.accumulation_steps = \
             adaptdl.collective.broadcast((self._state.current_local_bsz,
                                           self._state.accumulation_steps))
+
+        # set local bsz bounds for next invocation 
+        # no-op if (not _adaptive_local_bsz_bounds)
+        self._local_bsz_bounds = local_bsz_bounds
+
         return self.current_local_bsz
 
     @property
@@ -419,9 +462,9 @@ class AdaptiveDataLoaderMixin(object):
         self._elastic = AdaptiveDataLoaderHelper(batch_size)
 
     def autoscale_batch_size(self, max_batch_size, local_bsz_bounds=None,
-                             gradient_accumulation=False):
+                             gradient_accumulation=False, local_bsz_bounds_dict=None):
         self._elastic.autoscale_batch_size(max_batch_size, local_bsz_bounds,
-                                           gradient_accumulation)
+                                           gradient_accumulation, local_bsz_bounds_dict)
 
     @property
     def current_local_bsz(self):

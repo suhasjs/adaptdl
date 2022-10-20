@@ -78,7 +78,9 @@ def profile_step_commit(epoch, batch_size, accumulation_step=False):
 
     # create new table for new GPU type profiles
     gpu_type = adaptdl.env.gpu_type()
+    print(f"Got GPU type: {gpu_type}")
     if gpu_type not in state.profile_dict:
+        print(f"Adding GPU type: {gpu_type}")
         state.profile_dict[gpu_type] = collections.defaultdict(collections.Counter)
 
     if accumulation_step:

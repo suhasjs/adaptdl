@@ -3,10 +3,15 @@ kind: AdaptDLJob
 metadata:
   generateName: cifar10-
 spec:
-        # placement: ["phodgx1"]
+        # placement: ["phortx2", "phortx2", "phortx2", "phortx2", "phortx2", "phortx2", "phortx2", "phortx2"]
   template:
     spec:
-            #      hostNetwork: true
+      # hostNetwork: true
+      tolerations:
+      - key: "experiment-reserved"
+        operator: "Equal"
+        value: "suhasj"
+        effect: "NoSchedule"
       hostIPC: true
       containers:
       - name: main

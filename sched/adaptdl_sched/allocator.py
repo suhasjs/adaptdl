@@ -170,17 +170,19 @@ class AdaptDLAllocator(object):
                 else:
                     # process as heterogeneity-aware
                     perf_params_dict = hints["perfParamsDict"]
+                    print(f"Perf params dict: {perf_params_dict}")
                     perf_params = dict()
-                    for gpu_type, gpu_perf_params in perf_params_dict.keys():
+                    for gpu_type, gpu_perf_params in perf_params_dict.items():
                         perf_params[gpu_type] = PerfParams(*[gpu_perf_params[k]
                                             for k in PERF_PARAMS.keys()])
                     speedup_fn = dict()
-                    local_bsz_bounds = hints.get("localBszBoundsDict")
-                    print(f"Local Bsz Bounds: {local_bsz_bounds}")
+                    local_bsz_bounds = hints.get("localBszBounds", None)
+                    local_bsz_bounds_dict = hints.get("localBszBoundsDict", dict())
+                    print(f"Local Bsz Bounds: {local_bsz_bounds}, local bsz bounds dict: {local_bsz_bounds_dict}")
                     for gpu_type, gpu_perf_params in perf_params.items():
                         goodput_fn = GoodputFunction(gpu_perf_params, grad_params,
                                                      hints["initBatchSize"])
-                        gpu_bsz_bounds = local_bsz_bounds.get(gpu_type, local_bsz_bounds)
+                        gpu_bsz_bounds = local_bsz_bounds_dict.get(gpu_type, local_bsz_bounds)
                         speedup_fn[gpu_type] = SpeedupFunction(goodput_fn, hints.get("maxBatchSize"), 
                                                                gpu_bsz_bounds,hints.get("gradientAccumulation", False))
             else:

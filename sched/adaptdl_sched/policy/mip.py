@@ -926,11 +926,10 @@ class MIPPolicy(object):
     return job_allocs, cluster_allocs
 
   def optimize(self, jobs, nodes, base_allocations, node_template):
-    print(f"Input nodes: {nodes}")
-    print(f"Input jobs: {jobs}")
-    print(f"Input base_allocations: {base_allocations}")
+    LOG.info(f"Input nodes: {nodes}")
+    LOG.info(f"Input jobs: {jobs}")
+    LOG.info(f"Input base_allocations: {base_allocations}")
     new_nodes, alloc_configs = self.get_valid_configs(nodes)
-    print(f"Fixed nodes: {new_nodes}")
     # TODO :: jobs[i].speedup_fn is not a map : gpu_type -> gpu_speedup_fn
     if DEBUG_PHOEBE:
       # blacklist all other gpu types except `chosen_cluster`
@@ -948,6 +947,7 @@ class MIPPolicy(object):
         speedup_fns[chosen_cluster] = jobs[job_name].speedup_fn
         jobs[job_name].speedup_fn = speedup_fns
     
+    LOG.info(f"Post-filtering nodes: {new_nodes}")
     # get size of clusters
     cluster_num_nodes, cluster_num_gpus = dict(), dict()
     for cluster, cluster_nodes in new_nodes.items():

@@ -8,6 +8,7 @@ COPY benchmark/models/imagenet/requirements.txt requirements.txt
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY adaptdl adaptdl
+COPY adaptdl/adaptdl/torch/profiles /profiles
 ENV PYTHONPATH=/root/adaptdl:$PYTHONPATH
 
 COPY benchmark/models/imagenet imagenet

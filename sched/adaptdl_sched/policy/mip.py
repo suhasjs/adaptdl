@@ -40,7 +40,7 @@ CLUSTER_NUM_GPUS = {
   "quad" : 4,
 }
 # do not consider these nodes for scheduling
-BLACKLIST_NODES = ["phoebe-mgmt", "phoquad1", "phodgx1", "phodgx2"]
+BLACKLIST_NODES = ["phoebe-mgmt", "phodgx1", "phodgx2", "phortx2", "phortx3"]
 
 class MIPPolicy(object):
   # ensure sign(p_fairness) != sign(lambda_*)

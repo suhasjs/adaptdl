@@ -171,7 +171,7 @@ class AdaptDLAllocator(object):
                 else:
                     # process as heterogeneity-aware
                     perf_params_dict = hints["perfParamsDict"]
-                    seed_perf_params_dict = hints["perfParamsHintDict"]
+                    seed_perf_params_dict = hints.get("perfParamsHintDict", dict())
                     LOG.info(f"Perf params dict: {perf_params_dict}")
                     LOG.info(f"Seed perf params dict: {seed_perf_params_dict}")
                     perf_params = dict()

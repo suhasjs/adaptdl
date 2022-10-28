@@ -255,7 +255,7 @@ def seed_sched_hints(profiles):
         local_bsz = np.array(gpu_profile['local_bsz'])
         step_time = np.array(gpu_profile['step_time'])
         sync_time = np.array(gpu_profile['sync_time'])
-        print(f"Seed profile: {gpu_type} -> {num_nodes}, {num_replicas}, {local_bsz}, {step_time}, {sync_time}")
+        LOG.info(f"Seed profile: {gpu_type} -> {num_nodes}, {num_replicas}, {local_bsz}, {step_time}, {sync_time}")
 
         compute_time = step_time - sync_time
         perf_params = fit_perf_params(num_nodes, num_replicas, local_bsz, compute_time, step_time)
@@ -263,7 +263,7 @@ def seed_sched_hints(profiles):
         print(f"Seed perf params: {gpu_type} -> {perf_params}")
     # set seed hints
     _SEED_SCHED_HINT_DICT = seed_params_dict
-    print(f"_SEED_SCHED_HINT_DICT :{_SEED_SCHED_HINT_DICT}")
+    LOG.info(f"_SEED_SCHED_HINT_DICT :{_SEED_SCHED_HINT_DICT}")
 
 
 class _MetricsState(adaptdl.checkpoint.State):

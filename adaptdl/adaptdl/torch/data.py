@@ -490,12 +490,9 @@ class AdaptiveDataLoaderMixin(object):
                         profile_bsz = int(line.get('local_bsz', None))
                         gpu_type = line.get('gpu_type', None)
                         if profile_bsz is not None:
-                            gpu_min_bsz = gpu_bsz_bounds.setdefault(gpu_type, [min_local_bsz, max_local_bsz])[0]
-                            gpu_max_bsz = gpu_bsz_bounds.setdefault(gpu_type, [min_local_bsz, max_local_bsz])[1]
-                            
-                            gpu_max_bsz = max(profile_bsz, gpu_max_bsz)
-                            gpu_min_bsz = min(gpu_min_bsz, min_local_bsz)
-                            gpu_bsz_bounds[gpu_type] = [gpu_min_bsz, gpu_max_bsz]
+                            _, cur_max = gpu_bsz_bounds.get(gpu_type, [None, None])
+                            if cur_max is None or cur_max < profile_bsz:
+                                gpu_bsz_bounds[gpu_type] = [min_local_bsz, profile_bsz]
                     
                     # seed hints to scheduler
                     seed_sched_hints(app_profile)

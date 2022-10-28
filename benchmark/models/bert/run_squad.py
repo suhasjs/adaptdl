@@ -97,7 +97,7 @@ def train(args, train_dataset, model, tokenizer):
 
     model = adaptdl.torch.AdaptiveDataParallel(model, optimizer)
     train_dataloader = adaptdl.torch.AdaptiveDataLoader(train_dataset, batch_size=args.train_batch_size, drop_last=True)
-    train_dataloader.autoscale_batch_size(384, local_bsz_bounds=(4, 48), gradient_accumulation=True)
+    train_dataloader.autoscale_batch_size(384, local_bsz_bounds=(4, 24), gradient_accumulation=True)
 
     print(f"TIME: {timeit.default_timer() - main_start}s -- Finished creating AdaptiveDataLoader and AdaptiveDataParallel model")
     # Train!

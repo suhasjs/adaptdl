@@ -17,6 +17,7 @@ import collections
 import json
 import pickle
 import time
+import logging
 
 import numpy as np
 
@@ -26,6 +27,10 @@ import adaptdl.env
 from adaptdl.goodput import GoodputFunction, fit_perf_params
 from adaptdl.sched_hints import SCHED_HINTS, PERF_PARAMS, NODE_TO_CLUSTER_MAP, post_sched_hints
 
+
+logging.basicConfig(level=logging.INFO)
+LOG = logging.getLogger(__name__)
+LOG.setLevel(logging.INFO)
 
 def report_train_metrics(epoch, loss, **kwargs):
     if adaptdl.env.replica_rank() > 0:
@@ -78,7 +83,6 @@ def profile_step_commit(epoch, batch_size, accumulation_step=False):
 
     # create new table for new GPU type profiles
     gpu_type = adaptdl.env.gpu_type()
-    print(f"Got GPU type: {gpu_type}")
     if gpu_type not in state.profile_dict:
         print(f"Adding GPU type: {gpu_type}")
         state.profile_dict[gpu_type] = collections.defaultdict(collections.Counter)
@@ -178,6 +182,7 @@ def _fit_perf_params():
     state = _metrics_state()
     # fit perf params per GPU type
     for gpu_type, gpu_profile in state.profile_dict.items():
+        print(f"Fitting perf params for gpu type: {gpu_type}")
         profile = {k: v for k, v in gpu_profile.items() if v.get("optim_count")}
         state.perf_params_dict[gpu_type] = _fit_perf_params_helper(profile)
     # fit perf params mixed (for pollux and backward compatibility)
@@ -185,7 +190,7 @@ def _fit_perf_params():
     state.perf_params = _fit_perf_params_helper(profile)
 
 # scheduling hints for this job (set by master)
-_SEED_SCHED_HINT_DICT = {}
+_SEED_SCHED_HINT_DICT = None
 
 def _report_sched_hints(epoch, batch_size):
     assert adaptdl.env.replica_rank() == 0
@@ -224,6 +229,7 @@ def seed_sched_hints(profiles):
         return
     
     # already computed seed params
+    global _SEED_SCHED_HINT_DICT
     if _SEED_SCHED_HINT_DICT:
         return
 
@@ -239,9 +245,9 @@ def seed_sched_hints(profiles):
         nreplicas = sum([int(v) for v in str(placement)])
         seed_profiles_dict[gpu_type].setdefault('num_nodes', list()).append(nnodes)
         seed_profiles_dict[gpu_type].setdefault('num_replicas', list()).append(nreplicas)
-        seed_profiles_dict[gpu_type].setdefault('local_bsz', list()).append(profile['local_bsz'])
-        seed_profiles_dict[gpu_type].setdefault('step_time', list()).append(profile['step_time'])
-        seed_profiles_dict[gpu_type].setdefault('sync_time', list()).append(profile['sync_time'])
+        seed_profiles_dict[gpu_type].setdefault('local_bsz', list()).append(int(profile['local_bsz']))
+        seed_profiles_dict[gpu_type].setdefault('step_time', list()).append(float(profile['step_time']))
+        seed_profiles_dict[gpu_type].setdefault('sync_time', list()).append(float(profile['sync_time']))
 
     for gpu_type, gpu_profile in seed_profiles_dict.items():
         num_nodes = np.array(gpu_profile['num_nodes'])
@@ -253,10 +259,9 @@ def seed_sched_hints(profiles):
 
         compute_time = step_time - sync_time
         perf_params = fit_perf_params(num_nodes, num_replicas, local_bsz, compute_time, step_time)
-        seed_params_dict[gpu_type] = {k: v for (k, v) in zip(PERF_PARAMS.keys(), state.perf_params)}
+        seed_params_dict[gpu_type] = {k: v for (k, v) in zip(PERF_PARAMS.keys(), perf_params)}
         print(f"Seed perf params: {gpu_type} -> {perf_params}")
     # set seed hints
-    global _SEED_SCHED_HINT_DICT
     _SEED_SCHED_HINT_DICT = seed_params_dict
     print(f"_SEED_SCHED_HINT_DICT :{_SEED_SCHED_HINT_DICT}")
 

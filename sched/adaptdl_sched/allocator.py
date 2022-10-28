@@ -119,6 +119,7 @@ class AdaptDLAllocator(object):
         return node_infos, node_template
 
     async def _find_jobs_and_allocations(self):
+        LOG.info(f"Finding existing jobs and allocations")
         job_list = await self._objs_api.list_namespaced_custom_object(
             "adaptdl.petuum.com", "v1", "", "adaptdljobs")
         job_infos = {}
@@ -171,21 +172,21 @@ class AdaptDLAllocator(object):
                     # process as heterogeneity-aware
                     perf_params_dict = hints["perfParamsDict"]
                     seed_perf_params_dict = hints["perfParamsHintDict"]
-                    print(f"Perf params dict: {perf_params_dict}")
-                    print(f"Seed perf params dict: {seed_perf_params_dict}")
+                    LOG.info(f"Perf params dict: {perf_params_dict}")
+                    LOG.info(f"Seed perf params dict: {seed_perf_params_dict}")
                     perf_params = dict()
                     for gpu_type, gpu_perf_params in perf_params_dict.items():
                         perf_params[gpu_type] = PerfParams(*[gpu_perf_params[k]
                                             for k in PERF_PARAMS.keys()])
                     for gpu_type, gpu_perf_params in seed_perf_params_dict.items():
                         if gpu_type not in perf_params:
-                            print(f"Using seeded profile for GPU type: {gpu_type}")
+                            LOG.info(f"Using seeded profile for GPU type: {gpu_type}")
                             perf_params[gpu_type] = PerfParams(*[gpu_perf_params[k] for k in PERF_PARAMS.keys()])
 
                     speedup_fn = dict()
                     local_bsz_bounds = hints.get("localBszBounds", None)
                     local_bsz_bounds_dict = hints.get("localBszBoundsDict", dict())
-                    print(f"Local Bsz Bounds: {local_bsz_bounds}, local bsz bounds dict: {local_bsz_bounds_dict}")
+                    LOG.info(f"Local Bsz Bounds: {local_bsz_bounds}, local bsz bounds dict: {local_bsz_bounds_dict}")
                     for gpu_type, gpu_perf_params in perf_params.items():
                         goodput_fn = GoodputFunction(gpu_perf_params, grad_params,
                                                      hints["initBatchSize"])

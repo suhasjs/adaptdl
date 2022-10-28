@@ -50,7 +50,8 @@ SCHED_HINTS = MappingProxyType({'initBatchSize': 0,
                                 'perfParams': None,
                                 'nodeName' : None, # node reporting hints
                                 'localBszBoundsDict' : None, # script reporting hints for GPU types
-                                'perfParamsDict' : None}) # perf params for each GPU type
+                                'perfParamsDict' : None, # perf params for each GPU type
+                                'perfParamsHintDict' : None}) # perf params hints for each GPU type, offline profiling
 
 def post_sched_hints(sched_hints, job_key):
     url = adaptdl.env.supervisor_url()
@@ -60,7 +61,7 @@ def post_sched_hints(sched_hints, job_key):
     try:
         for k in sched_hints:
             assert k in SCHED_HINTS  # validate
-
+        LOG.info(f"Posting hints: {sched_hints}")
         response = \
             requests.put(url=f"{url}/hints/{job_key}",
                          data=json.dumps(sched_hints),

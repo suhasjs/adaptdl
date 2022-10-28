@@ -8,6 +8,11 @@ spec:
     spec:
             #      hostNetwork: true
       hostIPC: true
+      tolerations:
+      - key: "experiment-reserved"
+        operator: "Equal"
+        value: "suhasj"
+        effect: "NoSchedule"
       containers:
       - name: main
         securityContext:
@@ -25,12 +30,12 @@ spec:
         resources:
           limits:
             nvidia.com/gpu: 1
-            rdma/hca: 1
+            rdma/hca: 0
             cpu: 9
             memory: "40G"
           requests:
             nvidia.com/gpu: 1
-            rdma/hca: 1
+            rdma/hca: 0
             cpu: 9
             memory: "40G"
         volumeMounts:

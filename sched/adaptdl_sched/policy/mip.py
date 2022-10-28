@@ -1,6 +1,7 @@
 # MIP formulation of Pollux with truncated search space for allocations
 # Author: Suhas Jayaram Subramanya (suhasj@cs.cmu.edu)
 
+import copy
 import cvxpy as cp
 import logging
 import numpy as np
@@ -89,6 +90,13 @@ class MIPPolicy(object):
     self.window_prev_allocs = dict()
     self.window_len = timeshare_penalty_window
       
+  def _get_mock_phoebe_node(self, node_name, template_node):
+    gpu_type = NODE_TO_CLUSTER_MAP[node_name]
+    ngpus_per_node = CLUSTER_NUM_GPUS[gpu_type]
+    copy_node = copy.deepcopy(template_node)
+    copy_node.resources['nvidia.com/gpu'] = ngpus_per_node
+    return copy_node
+
   def get_valid_configs(self, nodes):
     # get gpu type -> nodenames map
     self.cluster_node_ordering = dict()
@@ -520,7 +528,7 @@ class MIPPolicy(object):
       # compute _fair_ goodput
       nnz_speedups = dict()
       for cluster in self.cluster_ordering:
-        speedup_fn = job.speedup_fn[cluster]
+        speedup_fn = job.speedup_fn.get(cluster, None)
         if isinstance(job.max_replicas, dict):
           if self.share_max_replicas:
             max_replicas = max(job.max_replicas.values())
@@ -553,10 +561,11 @@ class MIPPolicy(object):
         valid_nnodes, valid_ngpus = alloc_num_nodes[valid_configs], alloc_num_replicas[valid_configs]
         goodput_matrix = cluster_goodput_matrices[cluster]
         valid_configs_goodput = self._compute_goodputs(job, cluster, valid_nnodes, valid_ngpus)
-        print(f"{jobnames[i]}, {cluster}: {valid_configs_goodput}")
-        goodput_matrix[i, valid_configs] = valid_configs_goodput
-        if valid_nnodes.size == 0:
+        print(f"{jobnames[i]}, {cluster}: {valid_nnodes}, {valid_ngpus} -> {valid_configs_goodput}")
+        if valid_configs_goodput is None or valid_nnodes.size == 0:
           nnz_speedups[cluster] = 1
+        else:
+          goodput_matrix[i, valid_configs] = valid_configs_goodput
       
       # fill in (1, 1) config for each cluster with lowest value for 1,1 config in any cluster
       cluster_min_goodputs = []
@@ -591,7 +600,7 @@ class MIPPolicy(object):
     # append slow and fast speedup matrices
     final_speedup_matrix = np.hstack(tuple([cluster_goodput_matrices[cluster] for cluster in self.cluster_ordering]))
 
-    # print(f"speedup matrix: {final_speedup_matrix}")
+    LOG.info(f"speedup matrix: {final_speedup_matrix}")
     optim_st_time = time.time()
     if self.apply_timeshare_penalty:
       job_allocs, cluster_allocs = self.__solve_mip_timeshare(final_speedup_matrix, num_gpus, job_weights,
@@ -929,25 +938,22 @@ class MIPPolicy(object):
     LOG.info(f"Input nodes: {nodes}")
     LOG.info(f"Input jobs: {jobs}")
     LOG.info(f"Input base_allocations: {base_allocations}")
-    new_nodes, alloc_configs = self.get_valid_configs(nodes)
     # TODO :: jobs[i].speedup_fn is not a map : gpu_type -> gpu_speedup_fn
     if DEBUG_PHOEBE:
       # blacklist all other gpu types except `chosen_cluster`
-      chosen_cluster = "rtx"
-      new_new_nodes = dict()
-      new_new_nodes[chosen_cluster] = new_nodes[chosen_cluster]
-      new_nodes = new_new_nodes
-      self.cluster_ordering = [chosen_cluster]
+      add_nodes = ["phoquad1", "phortx1"]
+      new_nodes = { k : self._get_mock_phoebe_node(k, nodes['phodgx1']) for k in add_nodes}
+      nodes = new_nodes
+      LOG.info(f"DEBUG_PHOEBE: Input nodes: {nodes}")
 
-      # convert jobs[i].speedup_fn to a dict: gpu_type -> gpu_speedup_fn
-      for job_name in jobs.keys():
-        if isinstance(jobs[job_name].speedup_fn, dict):
-          continue
-        speedup_fns = dict()
-        speedup_fns[chosen_cluster] = jobs[job_name].speedup_fn
-        jobs[job_name].speedup_fn = speedup_fns
-    
+      for jobname in jobs.keys():
+        # no speedup fn if 
+        if not isinstance(jobs[jobname].speedup_fn, dict):
+            jobs[jobname].speedup_fn = dict()
+        
+    new_nodes, alloc_configs = self.get_valid_configs(nodes)
     LOG.info(f"Post-filtering nodes: {new_nodes}")
+    '''
     # get size of clusters
     cluster_num_nodes, cluster_num_gpus = dict(), dict()
     for cluster, cluster_nodes in new_nodes.items():
@@ -956,6 +962,7 @@ class MIPPolicy(object):
       for idx, node_info in cluster_nodes.items():
         cluster_num_gpus[cluster] += node_info.resources.get('nvidia.com/gpu', 0)
     LOG.info(f"Optimize: cluster_num_nodes: {cluster_num_nodes}, cluster_num_gpus: {cluster_num_gpus}")
+    '''
     LOG.info(f"Alloc configs: {alloc_configs}")
     LOG.info(f"Fairness knob: p = {self.p_fairness}")
     if self.p_fairness > 0:

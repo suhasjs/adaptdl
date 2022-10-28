@@ -41,7 +41,7 @@ class Trainer(object):
                                                                  num_workers=cfg.TRAIN["NUMBER_WORKERS"],
                                                                  drop_last=True,
                                                                  shuffle=True)
-        self.train_dataloader.autoscale_batch_size(512, local_bsz_bounds=(4, 32),
+        self.train_dataloader.autoscale_batch_size(512, local_bsz_bounds=(4, 16),
                                                    gradient_accumulation=True)
         self.valid_dataset = data.VocDataset(anno_file_type="test")
         self.valid_dataloader = adaptdl.torch.AdaptiveDataLoader(self.valid_dataset,

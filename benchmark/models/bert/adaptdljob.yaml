@@ -8,6 +8,11 @@ spec:
     spec:
       terminationGracePeriodSeconds: 60
       hostIPC: true
+      tolerations:
+      - key: "experiment-reserved"
+        operator: "Equal"
+        value: "suhasj"
+        effect: "NoSchedule"
       # hostNetwork: true
       containers:
       - name: main
@@ -45,12 +50,12 @@ spec:
         resources:
           limits:
             nvidia.com/gpu: 1
-            rdma/hca: 1
+            rdma/hca: 0
             cpu: 9
             memory: "40G"
           requests:
             nvidia.com/gpu: 1
-            rdma/hca: 1
+            rdma/hca: 0
             cpu: 9
             memory: "40G"
         volumeMounts:

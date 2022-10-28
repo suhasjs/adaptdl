@@ -104,7 +104,7 @@ def main_worker(args):
         train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True,
         num_workers=args.workers, pin_memory=True)
     if args.autoscale_bsz:
-        train_loader.autoscale_batch_size(12800, local_bsz_bounds=(20, 800), gradient_accumulation=True)
+        train_loader.autoscale_batch_size(12800, local_bsz_bounds=(20, 400), gradient_accumulation=True)
 
     val_loader = adaptdl.torch.AdaptiveDataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([

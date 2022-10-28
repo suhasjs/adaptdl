@@ -21,6 +21,7 @@ import logging
 import math
 import numpy as np
 import os
+import csv
 import pickle
 import random
 import torch
@@ -32,7 +33,7 @@ import adaptdl.env
 from adaptdl.torch.epoch import current_epoch
 from adaptdl.torch._metrics import (
     profile_step_start, profile_step_commit,
-    set_batch_size, get_goodput_fn, get_progress)
+    set_batch_size, get_goodput_fn, get_progress, seed_sched_hints)
 from adaptdl._signal import get_exit_flag
 
 from adaptdl.torch._metrics import _metrics_state
@@ -462,7 +463,48 @@ class AdaptiveDataLoaderMixin(object):
         self._elastic = AdaptiveDataLoaderHelper(batch_size)
 
     def autoscale_batch_size(self, max_batch_size, local_bsz_bounds=None,
-                             gradient_accumulation=False, local_bsz_bounds_dict=None):
+                             gradient_accumulation=False, optimize_app=None):
+        local_bsz_bounds_dict = None
+
+        # read offline profiles if they exist
+        if optimize_app is not None:
+            dir_path = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+            app_profile_filename = os.path.join(dir_path, "/profiles/", optimize_app + ".csv")
+            app_profile = None
+            if os.path.exists(app_profile_filename):
+                # set params
+                self._elastic._adaptive_local_bsz_bounds = True
+                self._elastic._use_heterogeneity_oblivious_goodput = True
+                gpu_bsz_bounds = dict()
+                max_local_bsz = None if local_bsz_bounds is None else local_bsz_bounds[1]
+                min_local_bsz = None if local_bsz_bounds is None else local_bsz_bounds[0]
+
+                print(f"Reading app profile for {optimize_app} from {app_profile_filename}")
+                with open(app_profile_filename, 'r') as f:
+                    reader = csv.DictReader(f)
+                    for line in reader:
+                        app_profile.append(line)
+                        profile_bsz = line.get('local_bsz', None)
+                        gpu_type = line.get('gpu_type', None)
+                        if profile_bsz is not None:
+                            gpu_min_bsz = gpu_bsz_bounds.setdefault(gpu_type, [min_local_bsz, max_local_bsz])[0]
+                            gpu_max_bsz = gpu_bsz_bounds.setdefault(gpu_type, [min_local_bsz, max_local_bsz])[1]
+                            
+                            gpu_max_bsz = max(profile_bsz, gpu_max_bsz)
+                            gpu_min_bsz = min(gpu_min_bsz, min_local_bsz)
+                            gpu_bsz_bounds[gpu_type] = [gpu_min_bsz, gpu_max_bsz]
+                    
+                    # seed hints to scheduler
+                    seed_sched_hints(app_profile)
+
+                print(f"App profile: {app_profile}")
+                print(f"Inferred local_bsz_bounds dict: {gpu_bsz_bounds}")
+                local_bsz_bounds_dict = gpu_bsz_bounds
+                cur_gpu_type = adaptdl.env.gpu_type()
+                if cur_gpu_type in local_bsz_bounds_dict:
+                    print(f"Correcting local bsz bounds: {cur_gpu_type} : {local_bsz_bounds} -> {local_bsz_bounds_dict[cur_gpu_type]}")
+                    local_bsz_bounds = local_bsz_bounds_dict[cur_gpu_type]
+
         self._elastic.autoscale_batch_size(max_batch_size, local_bsz_bounds,
                                            gradient_accumulation, local_bsz_bounds_dict)
 

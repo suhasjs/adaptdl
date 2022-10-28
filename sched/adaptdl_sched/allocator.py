@@ -170,11 +170,18 @@ class AdaptDLAllocator(object):
                 else:
                     # process as heterogeneity-aware
                     perf_params_dict = hints["perfParamsDict"]
+                    seed_perf_params_dict = hints["perfParamsHintDict"]
                     print(f"Perf params dict: {perf_params_dict}")
+                    print(f"Seed perf params dict: {seed_perf_params_dict}")
                     perf_params = dict()
                     for gpu_type, gpu_perf_params in perf_params_dict.items():
                         perf_params[gpu_type] = PerfParams(*[gpu_perf_params[k]
                                             for k in PERF_PARAMS.keys()])
+                    for gpu_type, gpu_perf_params in seed_perf_params_dict.items():
+                        if gpu_type not in perf_params:
+                            print(f"Using seeded profile for GPU type: {gpu_type}")
+                            perf_params[gpu_type] = PerfParams(*[gpu_perf_params[k] for k in PERF_PARAMS.keys()])
+
                     speedup_fn = dict()
                     local_bsz_bounds = hints.get("localBszBounds", None)
                     local_bsz_bounds_dict = hints.get("localBszBoundsDict", dict())

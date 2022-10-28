@@ -101,7 +101,7 @@ def profile_step_commit(epoch, batch_size, accumulation_step=False):
     if not accumulation_step:
         if _PREV_REPORT is None:
             _PREV_REPORT = time.time()
-        if adaptdl.env.replica_rank() == 0 and time.time() - _PREV_REPORT > 30:
+        if adaptdl.env.replica_rank() == 0 and time.time() - _PREV_REPORT > 15:
             _fit_perf_params()
             _report_sched_hints(epoch, batch_size)
             _PREV_REPORT = time.time()
@@ -124,7 +124,6 @@ def update_progress(progress):
 def get_progress():
     return _metrics_state().progress
 
-
 def set_batch_size(init_batch_size, max_batch_size, local_bsz_bounds,
                    gradient_accumulation, local_bsz_bounds_dict = None):
     state = _metrics_state()
@@ -143,12 +142,16 @@ def get_goodput_fn(gpu_type=None):
     if gpu_type is None:
         return GoodputFunction(state.perf_params, state.grad_params, state.init_batch_size)
     else:
-        if gpu_type not in state.perf_params_dict:
-            print(f"couldn't find perf params for {gpu_type}")
-            return None
-        else:
+        if gpu_type in state.perf_params_dict:
             return GoodputFunction(state.perf_params_dict[gpu_type], state.grad_params, 
                                    state.init_batch_size)
+        elif gpu_type in state.seed_perf_params_dict:
+            print(f"Using seed throughput function")
+            return GoodputFunction(state.seed_perf_params_dict[gpu_type], state.grad_params, 
+                                   state.init_batch_size)
+        else:
+            print(f"couldn't find perf params for {gpu_type}")
+            return None
 
 def _fit_perf_params_helper(profile):
     # Convert profile into numpy arrays.
@@ -181,6 +184,9 @@ def _fit_perf_params():
     profile = {k: v for k, v in state.profile.items() if v.get("optim_count")}
     state.perf_params = _fit_perf_params_helper(profile)
 
+# scheduling hints for this job (set by master)
+_SEED_SCHED_HINT_DICT = {}
+
 def _report_sched_hints(epoch, batch_size):
     assert adaptdl.env.replica_rank() == 0
     state = _metrics_state()
@@ -206,7 +212,54 @@ def _report_sched_hints(epoch, batch_size):
     for gpu_type, gpu_perf_params in state.perf_params_dict.items():
         perf_params_dict[gpu_type] = {k: v for (k, v) in zip(PERF_PARAMS.keys(), gpu_perf_params)}
     sched_hints["perfParamsDict"] = perf_params_dict
+    sched_hints["perfParamsHintDict"] = _SEED_SCHED_HINT_DICT
+    if not sched_hints["perfParamsHintDict"]:
+        print(f"Did not get seed sched hints")
     post_sched_hints(sched_hints, adaptdl.env.job_id())
+
+# profiles_dicts: list(profiles)
+# profile: { profile_key -> profile_value }
+def seed_sched_hints(profiles):
+    if adaptdl.env.replica_rank() != 0:
+        return
+    
+    # already computed seed params
+    if _SEED_SCHED_HINT_DICT:
+        return
+
+    seed_profiles_dict = dict()
+    seed_params_dict = dict()
+    for profile in profiles:
+        gpu_type = profile['gpu_type']
+        if gpu_type not in seed_profiles_dict:
+            seed_profiles_dict[gpu_type] = dict()
+        # Convert profile into numpy arrays.
+        placement = profile['placement']
+        nnodes = len(str(placement))
+        nreplicas = sum([int(v) for v in str(placement)])
+        seed_profiles_dict[gpu_type].setdefault('num_nodes', list()).append(nnodes)
+        seed_profiles_dict[gpu_type].setdefault('num_replicas', list()).append(nreplicas)
+        seed_profiles_dict[gpu_type].setdefault('local_bsz', list()).append(profile['local_bsz'])
+        seed_profiles_dict[gpu_type].setdefault('step_time', list()).append(profile['step_time'])
+        seed_profiles_dict[gpu_type].setdefault('sync_time', list()).append(profile['sync_time'])
+
+    for gpu_type, gpu_profile in seed_profiles_dict.items():
+        num_nodes = np.array(gpu_profile['num_nodes'])
+        num_replicas = np.array(gpu_profile['num_replicas'])
+        local_bsz = np.array(gpu_profile['local_bsz'])
+        step_time = np.array(gpu_profile['step_time'])
+        sync_time = np.array(gpu_profile['sync_time'])
+        print(f"Seed profile: {gpu_type} -> {num_nodes}, {num_replicas}, {local_bsz}, {step_time}, {sync_time}")
+
+        compute_time = step_time - sync_time
+        perf_params = fit_perf_params(num_nodes, num_replicas, local_bsz, compute_time, step_time)
+        seed_params_dict[gpu_type] = {k: v for (k, v) in zip(PERF_PARAMS.keys(), state.perf_params)}
+        print(f"Seed perf params: {gpu_type} -> {perf_params}")
+    # set seed hints
+    global _SEED_SCHED_HINT_DICT
+    _SEED_SCHED_HINT_DICT = seed_params_dict
+    print(f"_SEED_SCHED_HINT_DICT :{_SEED_SCHED_HINT_DICT}")
+
 
 class _MetricsState(adaptdl.checkpoint.State):
     def __init__(self):
@@ -224,6 +277,10 @@ class _MetricsState(adaptdl.checkpoint.State):
         self.profile_dict = dict()
         self.local_bsz_bounds_dict = dict()
         self.perf_params_dict = dict()
+
+        # seed perf params
+        self.do_seed_perf_params = False
+        self.seed_perf_params_dict = dict()
 
     def save(self, fileobj):
         pickle.dump(self.profile, fileobj)

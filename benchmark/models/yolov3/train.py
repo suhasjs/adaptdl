@@ -42,7 +42,7 @@ class Trainer(object):
                                                                  drop_last=True,
                                                                  shuffle=True)
         self.train_dataloader.autoscale_batch_size(512, local_bsz_bounds=(4, 16),
-                                                   gradient_accumulation=True)
+                                                   gradient_accumulation=True, optimize_app="yolov3")
         self.valid_dataset = data.VocDataset(anno_file_type="test")
         self.valid_dataloader = adaptdl.torch.AdaptiveDataLoader(self.valid_dataset,
                                                                  batch_size=(8 * adaptdl.env.num_replicas()),

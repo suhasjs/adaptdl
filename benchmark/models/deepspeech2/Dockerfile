@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install libsndfile1 -y
 
 COPY adaptdl adaptdl
 COPY adaptdl/adaptdl/torch/profiles /profiles
+COPY adaptdl/adaptdl/torch/seed /seed
 ENV PYTHONPATH=/root/adaptdl:$PYTHONPATH
 
 COPY benchmark/models/deepspeech2 deepspeech2

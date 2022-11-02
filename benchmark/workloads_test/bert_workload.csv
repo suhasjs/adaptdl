@@ -1,2 +1,2 @@
 name,time,application,num_replicas,batch_size
-bert-dgx-2epoch,1,bert,1,64
+bert,1,bert,1,64

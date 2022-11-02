@@ -16,6 +16,7 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY adaptdl adaptdl
 COPY adaptdl/adaptdl/torch/profiles /profiles
+COPY adaptdl/adaptdl/torch/seed /seed
 ENV PYTHONPATH=/root/adaptdl:$PYTHONPATH
 
 COPY benchmark/models/bert bert

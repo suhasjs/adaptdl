@@ -469,7 +469,7 @@ class AdaptiveDataLoaderMixin(object):
         # read offline profiles if they exist
         if optimize_app is not None:
             dir_path = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
-            app_profile_filename = os.path.join("/profiles/", optimize_app + ".csv")
+            app_profile_filename = os.path.join("/seed/", optimize_app + ".csv")
             LOG.info(f"Trying to read app profile for {optimize_app} from {app_profile_filename}")
             app_profile = []
             if not os.path.exists(app_profile_filename):

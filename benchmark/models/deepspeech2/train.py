@@ -139,7 +139,7 @@ if __name__ == '__main__':
 
     train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True,
                                    num_workers=args.num_workers)
-    train_loader.autoscale_batch_size(640, local_bsz_bounds=(10, 160), gradient_accumulation=True)
+    train_loader.autoscale_batch_size(640, local_bsz_bounds=(10, 160), gradient_accumulation=True, optimize_app="deepspeech2")
     test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size,
                                   num_workers=args.num_workers)
 

@@ -45,8 +45,8 @@ BLACKLIST_NODES = ["phoebe-mgmt", "phodgx1", "phodgx2", "phortx2", "phortx3"]
 class MIPPolicy(object):
   # ensure sign(p_fairness) != sign(lambda_*)
   def __init__(self, 
-         p_fairness = -1,
-         lambda_a=0,
+         p_fairness=-1,
+         lambda_a=0.0,
          lambda_n=1.2,
          project_throughputs=True,
          share_max_replicas=False,
@@ -331,7 +331,7 @@ class MIPPolicy(object):
     
     # remove configs that exceed cluster size
     max_dest_cluster_size = CLUSTER_NUM_GPUS[dest_cluster] * len(ID_TO_NODENAME_MAP[dest_cluster])
-    valid_dest_configs_idxs = (translated_num_replicas < max_dest_cluster_size) & (translated_num_nodes < len(ID_TO_NODENAME_MAP[dest_cluster]))
+    valid_dest_configs_idxs = (translated_num_replicas <= max_dest_cluster_size) & (translated_num_nodes <= len(ID_TO_NODENAME_MAP[dest_cluster]))
     # multiplier for throughput projection
     multiplier = job_info.cluster_throughput_ratios[cluster_name][dest_cluster]
 

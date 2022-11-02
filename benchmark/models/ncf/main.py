@@ -116,7 +116,7 @@ train_loader = adaptdl.torch.AdaptiveDataLoader(train_dataset, drop_last=True,
                                                 batch_size=args.batch_size,
                                                 shuffle=True, num_workers=4)
 train_loader.autoscale_batch_size(32768, local_bsz_bounds=(32, 32768),
-                                  gradient_accumulation=True)
+                                  gradient_accumulation=True, optimize_app="ncf")
 
 #os.environ["ADAPTDL_SUPERVISOR_URL"] = ""
 #os.environ["ADAPTDL_MASTER_ADDR"] = "phortx1"

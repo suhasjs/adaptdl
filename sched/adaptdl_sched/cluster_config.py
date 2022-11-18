@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import time as time
 from adaptdl.sched_hints import NODE_TO_CLUSTER_MAP
+from collections import Counter
 
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
@@ -28,7 +29,6 @@ CLUSTER_NUM_GPUS = {
 
 # do not consider these nodes for scheduling
 BLACKLIST_NODES = ["phoebe-mgmt", "phodgx1", "phodgx2", "phortx2", "phortx3"]
-
 
 # returns a mock node for phoebe cluster
 def get_mock_phoebe_node(node_name, template_node):
@@ -190,3 +190,47 @@ def alloc_to_placement_smart(cluster_name, job_allocs, cur_placements, node_rema
   placed_jobs.update(single_placed_jobs)
   
   return placed_jobs
+
+# fixes allocations by keeping GPUs making up majority of allocations (dropping others)
+# prio_order: ordering of GPU types to keep if equal probability of dropping
+# returns: new_allocs --> fixed allocs
+#          drop_count --> number of GPUs dropped for each job
+def fix_allocations_by_dropping(allocs, prio_order=None):
+  if prio_order is None:
+    prio_order = {"dgx" : 0, "quad": 1, "rtx": 2}
+  new_allocs = dict()
+  drop_count = dict()
+  for k, v in allocs.items():
+    # count unique GPUs of each type
+    gpu_types = [NODE_TO_CLUSTER_MAP[v2] for v2 in v]
+    gpu_counts = Counter(gpu_types).most_common()
+
+    # no heterogeneous allocs
+    if len(set(gpu_counts)) == 1:
+      new_allocs[k] = v
+      drop_count[k] = 0
+      continue
+    
+    if v is None or len(v) == 0:
+      new_allocs[k] = v
+      drop_count[k] = 0
+      continue
+
+    # homogeneous allocs
+    chosen_gpus = gpu_counts[0]
+    if gpu_counts[0][1] == gpu_counts[1][1]:
+      # check priority; keep more powerful GPUs in tie-break
+      chosen_prio = prio_order[gpu_counts[0][0]]
+      next_prio = prio_order[gpu_counts[1][0]]
+      if next_prio < chosen_prio:
+        chosen_gpus = gpu_counts[1]
+    
+    # retain gpus of chosen type
+    chosen_type = chosen_gpus[0]
+    new_allocs[k] = []
+    for v2 in v:
+      if NODE_TO_CLUSTER_MAP[v2] == chosen_type:
+        new_allocs[k].append(v2)
+      else:
+        LOG.info(f"Dropping: {v2} for {k}")
+  return new_allocs, drop_count

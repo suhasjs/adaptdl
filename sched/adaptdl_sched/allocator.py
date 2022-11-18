@@ -25,6 +25,7 @@ from adaptdl.sched_hints import PERF_PARAMS
 from adaptdl_sched.policy.applications import APPLICATIONS
 from adaptdl_sched.policy.optimus import OptimusPolicy
 from adaptdl_sched.policy.pollux import PolluxPolicy
+from adaptdl_sched.policy.unaware_pollux import UnawarePolluxPolicy
 from adaptdl_sched.policy.mip import MIPPolicy
 from adaptdl_sched.policy.tiresias import TiresiasPolicy
 from adaptdl_sched.policy.speedup import SpeedupFunction
@@ -50,6 +51,8 @@ class AdaptDLAllocator(object):
         self._cluster_expander = expander
         if POLICY == "pollux":
             self._policy = PolluxPolicy()
+        elif POLICY == "unaware_pollux":
+            self._policy = UnawarePolluxPolicy()
         elif POLICY == "optimus":
             self._policy = OptimusPolicy()
         elif POLICY == "tiresias":

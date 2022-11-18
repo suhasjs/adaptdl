@@ -40,8 +40,8 @@ LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
 
 
-POLICY = "mip"
-assert POLICY in ["optimus", "pollux", "tiresias", "mip"]
+POLICY = "unaware_pollux"
+assert POLICY in ["optimus", "pollux", "unaware_pollux", "tiresias", "mip"]
 
 
 class AdaptDLAllocator(object):

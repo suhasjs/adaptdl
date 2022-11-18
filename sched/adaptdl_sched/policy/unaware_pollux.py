@@ -131,7 +131,7 @@ class UnawarePolluxPolicy(object):
         if DEBUG_PHOEBE:
             # blacklist all other gpu types except `chosen_cluster`
             add_nodes = ["phoquad1", "phortx1"]
-            new_nodes = { k : get_mock_phoebe_node(k, nodes['phortx1']) for k in add_nodes}
+            new_nodes = { k : get_mock_phoebe_node(k, nodes['phodgx1']) for k in add_nodes}
             nodes = new_nodes
             LOG.info(f"DEBUG_PHOEBE: Modified input nodes: {nodes}")
 

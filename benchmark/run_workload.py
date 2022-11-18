@@ -82,7 +82,7 @@ if __name__ == "__main__":
     print(f"Clearing images in kubectl")
     subprocess.call(["kubectl", "delete", "ds", "images"])
     images_to_build = ["cifar10","bert", "ncf", "deepspeech2", "yolov3"]
-    # images_to_build = ["yolov3"]
+    # images_to_build = ["deepspeech2"]
     print(f"Building images: {images_to_build}")
     templates = build_images(images_to_build, args.repository)
     cache_images(templates)

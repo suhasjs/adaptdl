@@ -267,6 +267,7 @@ class AdaptiveDataLoaderHelper(object):
         if not isinstance(max_batch_size, int) or \
                 max_batch_size < self.batch_size:
             raise ValueError("invalid max_batch_size")
+        print(f"self.batch_size: {self.batch_size}, local_bsz_bounds: {local_bsz_bounds}")
         if local_bsz_bounds is not None and (
                 local_bsz_bounds[0] is not None and
                 local_bsz_bounds[0] > self.batch_size or
@@ -492,7 +493,7 @@ class AdaptiveDataLoaderMixin(object):
                         if profile_bsz is not None:
                             _, cur_max = gpu_bsz_bounds.get(gpu_type, [None, None])
                             if cur_max is None or cur_max < profile_bsz:
-                                gpu_bsz_bounds[gpu_type] = [min_local_bsz, profile_bsz]
+                                gpu_bsz_bounds[gpu_type] = (min_local_bsz, profile_bsz)
                     
                     # seed hints to scheduler
                     seed_sched_hints(app_profile)

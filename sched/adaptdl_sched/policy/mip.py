@@ -7,6 +7,8 @@ import logging
 import numpy as np
 import time as time
 from adaptdl_sched.policy.speedup import SpeedupFunction
+from adaptdl_sched.cluster_config import ID_TO_NODENAME_MAP, NODENAME_TO_ID_MAP, CLUSTER_NUM_GPUS, BLACKLIST_NODES
+from adaptdl_sched.cluster_config import alloc_to_placement_smart, get_mock_phoebe_node
 from adaptdl.sched_hints import NODE_TO_CLUSTER_MAP
 
 LOG = logging.getLogger(__name__)
@@ -22,31 +24,11 @@ ZERO_ALLOC_GAIN = 0.01
 
 DEBUG_PHOEBE = True
 
-ID_TO_NODENAME_MAP = {
-  "dgx" : {0 :"phodgx1", 1 : "phodgx2"},
-  "rtx" : {0 : "phortx1", 1 : "phortx2", 2 : "phortx3"},
-  "quad" : {0 : "phoquad1"}
-}
-
-NODENAME_TO_ID_MAP = {
-        "dgx" : {"phodgx1" : 0, "phodgx2": 1},
-        "rtx" : {"phortx1" : 0, "phortx2" : 1, "phortx3" : 2},
-        "quad" : {"phoquad1" : 0}
-}
-
-CLUSTER_NUM_GPUS = {
-  "dgx" : 8,
-  "rtx" : 8,
-  "quad" : 4,
-}
-# do not consider these nodes for scheduling
-BLACKLIST_NODES = ["phoebe-mgmt", "phodgx1", "phodgx2", "phortx2", "phortx3"]
-
 class MIPPolicy(object):
   # ensure sign(p_fairness) != sign(lambda_*)
   def __init__(self, 
          p_fairness=-1,
-         lambda_a=0.0,
+         lambda_a=0.02,
          lambda_n=1.2,
          project_throughputs=True,
          share_max_replicas=False,
@@ -80,7 +62,7 @@ class MIPPolicy(object):
     self.project_throughputs = project_throughputs
     self.gput_ratios = dict()
     if self.project_throughputs:
-      print(f"Project speedups active")
+      LOG.info(f"Project speedups active")
       self.share_max_replicas = True
     if share_max_replicas:
       self.share_max_replicas = True
@@ -90,13 +72,6 @@ class MIPPolicy(object):
     self.window_prev_allocs = dict()
     self.window_len = timeshare_penalty_window
       
-  def _get_mock_phoebe_node(self, node_name, template_node):
-    gpu_type = NODE_TO_CLUSTER_MAP[node_name]
-    ngpus_per_node = CLUSTER_NUM_GPUS[gpu_type]
-    copy_node = copy.deepcopy(template_node)
-    copy_node.resources['nvidia.com/gpu'] = ngpus_per_node
-    return copy_node
-
   def get_valid_configs(self, nodes):
     # get gpu type -> nodenames map
     self.cluster_node_ordering = dict()
@@ -105,7 +80,7 @@ class MIPPolicy(object):
           continue
       node_gpu_type = NODE_TO_CLUSTER_MAP.get(node_name, None)
       if node_gpu_type is None:
-        print(f"Invalid node gpu type. Node = {node_gpu_type} -> {node_resources}")
+        LOG.error(f"Invalid node gpu type. Node = {node_gpu_type} -> {node_resources}")
       else:
         if node_gpu_type not in self.cluster_node_ordering:
           self.cluster_node_ordering[node_gpu_type] = []
@@ -142,157 +117,6 @@ class MIPPolicy(object):
         cluster_node_dict[i] = nodes[node_name]
       new_nodes[cluster] = cluster_node_dict
     return new_nodes, self.configs
-
-  # cluster_name: cluster name
-  # job_allocs: {jobname : (num_nodes, num_gpus)}
-  # cur_placements: {jobname : (cluster, [gpu0, gpu1, gpu2, ...])}
-  # node_remaining_gpus: [gpus_left_in_node_0, gpus_left_in_node_1, .. N-1]
-  def alloc_to_placement_smart(self, cluster_name, job_allocs, cur_placements, node_remaining_gpus):
-    LOG.info(f"Cluster: {cluster_name}")
-    LOG.info(f"Allocs: {job_allocs}")
-    LOG.info(f"Cur Placements: {cur_placements}")
-    max_num_nodes = len(node_remaining_gpus)
-
-    # convert node names to node IDs for prev allocs
-    prev_placements = dict()
-    for jobname, placement in cur_placements.items():
-      if len(placement) > 0:
-        old_cluster_name = NODE_TO_CLUSTER_MAP[placement[0]]
-        # migrated between GPU types
-        if old_cluster_name != cluster_name:
-          prev_placements[jobname] = [-1]*len(placement)
-        else:
-          prev_placement = [NODENAME_TO_ID_MAP[cluster_name][node_name] for node_name in placement]
-          prev_placements[jobname] = prev_placement
-      else:
-        prev_placements[jobname] = []
-    
-    # determined {jobname : [gpu0, gpu1, gpu2...]}
-    placed_jobs = dict()
-    # partition into distributed and single-node jobs
-    single_node_jobs, distributed_jobs = [], []
-    ngpus_per_node = CLUSTER_NUM_GPUS[cluster_name]
-    for jobname, (nnodes, ngpus) in job_allocs.items():
-      if ngpus >= ngpus_per_node:
-        distributed_jobs.append(jobname)
-      else:
-        single_node_jobs.append(jobname)
-    # preserve placements for no change in alloc
-    distr_placed_jobs = dict()
-    single_placed_jobs = dict()
-    for jobname in job_allocs.keys():
-      prev_gpus = prev_placements.get(jobname, [])
-      _, cur_ngpus = job_allocs.get(jobname, (0, 0))
-      prev_cluster = None
-      # valid allocation in this cluster
-      if len(prev_gpus) > 0 and prev_gpus[0] >= 0:
-        prev_cluster = cluster_name
-      if prev_cluster == cluster_name and len(prev_gpus) == cur_ngpus:
-        if cur_ngpus < ngpus_per_node:
-          single_placed_jobs[jobname] = prev_gpus
-        else:
-          distr_placed_jobs[jobname] = prev_gpus
-        for node_id in prev_gpus:
-          node_remaining_gpus[node_id] -= 1
-          # print(f"Preserving placement: {jobname} -> {cluster_name}, {prev_gpus}")
-    
-    # alloc any other distr jobs from last node ID
-    for jobname in distributed_jobs:
-      # skip if preserving placement
-      if jobname in distr_placed_jobs:
-        continue
-      nnodes, ngpus = job_allocs.get(jobname, (0, 0))
-      assert ngpus != 0, f"got zero gpus for {jobname}"
-      # allocate nodes from last node ID
-      cur_node_id = max_num_nodes - 1
-      job_placement = []
-      while nnodes > 0 and cur_node_id >= 0:
-        # take whole node
-        if node_remaining_gpus[cur_node_id] == ngpus_per_node:
-          job_placement.extend([int(cur_node_id)] * ngpus_per_node)
-          node_remaining_gpus[cur_node_id] = 0
-          nnodes -= 1
-        cur_node_id -= 1
-        if cur_node_id == -1 and nnodes > 0:
-          # reclaim some node from single-node jobs
-          reclaim_node_id = np.argmax(node_remaining_gpus)
-          # print(f"reclaiming node --> {reclaim_node_id}, remaining gpus = {node_remaining_gpus[reclaim_node_id]}")
-          # find jobs mapped to this node
-          reclaim_jobs = []
-          for reclaim_jobname in single_placed_jobs.keys():
-            if reclaim_node_id in single_placed_jobs[reclaim_jobname]:
-              reclaim_jobs.append(reclaim_jobname)
-          for reclaim_jobname in reclaim_jobs:
-            gpus = single_placed_jobs.pop(reclaim_jobname)
-            # print(f"evicting {reclaim_jobname} -> {gpus}")
-            for node_id in gpus:
-              node_remaining_gpus[node_id] += 1
-          assert node_remaining_gpus[reclaim_node_id] == ngpus_per_node, "eviction assert"
-          # loop again to find this freed machine
-          cur_node_id = max_num_nodes - 1
-      # ensure all nodes got placed
-      assert nnodes == 0, f"couldnt place -- {jobname} -> {job_allocs[jobname]}"
-      distr_placed_jobs[jobname] = job_placement
-    # print(f"Distributed placements: {distr_placed_jobs}")
-    
-    # alloc any single node jobs from first node ID
-    def get_job_order(joblist):
-      return sorted(joblist, key=lambda x : job_allocs.get(jobname, (0, 0))[1], reverse=True)
-    joblist = [jobname for jobname in single_node_jobs if jobname not in single_placed_jobs]
-    # priority queue with prio = ngpus
-    job_order = get_job_order(joblist)
-    while len(job_order) > 0:
-      jobname = job_order.pop(0)
-      nnodes, ngpus = job_allocs.get(jobname, (0, 0))
-      if ngpus == 0:
-        single_placed_jobs[jobname] = None
-        continue
-
-      # allocate nodes from first node ID
-      # prefer packing --> seek node id with min(ngpus) remaining after alloc
-      job_placement = []
-      idxs = np.arange(max_num_nodes)
-      filter = node_remaining_gpus >= ngpus
-      if not any(filter):
-        # reclaim some gpus by evicting fewest gpus
-        reclaim_cand_idxs = idxs[node_remaining_gpus < ngpus]
-        reclaim_ordering = sorted(reclaim_cand_idxs, key=lambda x: (ngpus - node_remaining_gpus[x]))
-        reclaim_node_id = reclaim_ordering[0]
-        # evict some jobs from this node
-        # print(f"reclaiming node --> {reclaim_node_id}")
-        # find jobs mapped to this node
-        reclaim_jobs = []
-        for reclaim_jobname in single_placed_jobs.keys():
-          if reclaim_node_id in single_placed_jobs[reclaim_jobname]:
-            reclaim_jobs.append(reclaim_jobname)
-        # sort from smallest to largest job in node
-        reclaim_jobs = sorted(reclaim_jobs, key=lambda x : job_allocs[x][1])
-        while node_remaining_gpus[reclaim_node_id] < ngpus and len(reclaim_jobs) > 0:
-          reclaim_jobname = reclaim_jobs.pop(0)
-          gpus = single_placed_jobs.pop(reclaim_jobname)
-          # print(f"evicting {reclaim_jobname} -> {gpus}")
-          for gpu_id in gpus:
-            node_remaining_gpus[gpu_id] += 1
-          # add back to placement queue
-          job_order.append(reclaim_jobname)
-        # update placement queue with priorities
-        job_order = get_job_order(job_order)
-        # print(f"new job order -> {job_order}")
-        assert node_remaining_gpus[reclaim_node_id] >= ngpus, "eviction assert"
-        filter = node_remaining_gpus >= ngpus
-      assert any(filter), "failed to find a node to place: {jobname}; allocs = {job_allocs}, prev_allocs = {prev_allocs}, node_remaining_gpus = {node_remaining_gpus}"
-      # simple packing algo -- most full valid placement
-      place_idxs = idxs[filter]
-      place_idxs = sorted(place_idxs, key=lambda x: node_remaining_gpus[x])
-      place_idx = place_idxs[0]
-      job_placement.extend([int(place_idx)] * ngpus)
-      node_remaining_gpus[place_idx] -= ngpus
-      single_placed_jobs[jobname] = job_placement
-    # print(f"Single node placements: {single_placed_jobs}")
-    placed_jobs = distr_placed_jobs
-    placed_jobs.update(single_placed_jobs)
-    
-    return placed_jobs
 
   def _compute_goodputs(self, job_info, cluster_name, num_nodes, num_replicas):
     speedup_fn = job_info.speedup_fn.get(cluster_name, None)
@@ -345,7 +169,7 @@ class MIPPolicy(object):
 
     goodput_arr = np.asarray(dest_speedup_fn.get_goodput(translated_num_nodes.astype(np.float32), translated_num_replicas.astype(np.float32)), dtype=np.float32)
     output_arr[valid_dest_configs_idxs] = goodput_arr * multiplier
-    print(f"Imputated goodput for {cluster_name} from {dest_cluster}: {num_nodes}, {num_replicas} = {goodput_arr} -> {output_arr}")
+    LOG.info(f"Imputated goodput for {cluster_name} from {dest_cluster}: {num_nodes}, {num_replicas} = {goodput_arr} -> {output_arr}")
     return output_arr
   
   def save_current_gput_ratios(self, cluster_matrices, clusters):
@@ -364,6 +188,7 @@ class MIPPolicy(object):
   def get_current_gput_ratios(self):
     return self.gput_ratios if self.gput_ratios else dict()
 
+  # currently broken.. will fix; focusing only on `optimize_mip_inv` since `p < 0` for eval
   def optimize_mip(self, jobs, nodes, prev_allocations):
     np.set_printoptions(suppress=True)
     joblist, jobnames = [], []
@@ -408,7 +233,7 @@ class MIPPolicy(object):
           max_replicas = job.max_replicas[cluster]
           min_replicas = job.min_replicas[cluster]
         if min_replicas > 1:
-          print(f"Min replicas: {min_replicas}")
+          LOG.info(f"Min replicas: {min_replicas} for job: {job.name}")
         
         if speedup_fn is None:
           if not self.project_throughputs:
@@ -507,7 +332,7 @@ class MIPPolicy(object):
       num_gpus[k] = k_nodes * self.cluster_num_gpus[k]
     num_configs = {k : len(v) for k, v in self.configs.items()}
     total_num_configs = sum(num_configs.values())
-    print(f"Total number of configs per job: {total_num_configs}")
+    LOG.info(f"Total number of configs per job: {total_num_configs}")
 
     # single-cluster speedup-matrix
     cluster_goodput_matrices = {k : np.zeros((num_jobs, num_configs[k]), dtype=np.float32) + ZERO_ALLOC_GAIN 
@@ -541,7 +366,7 @@ class MIPPolicy(object):
           min_replicas = job.min_replicas
 
         if min_replicas > 1:
-          print(f"Min replicas: {min_replicas}")
+          LOG.info(f"Min replicas: {min_replicas} for job: {jobnames[i]}")
         
         if speedup_fn is None:
           if not self.project_throughputs:
@@ -561,7 +386,7 @@ class MIPPolicy(object):
         valid_nnodes, valid_ngpus = alloc_num_nodes[valid_configs], alloc_num_replicas[valid_configs]
         goodput_matrix = cluster_goodput_matrices[cluster]
         valid_configs_goodput = self._compute_goodputs(job, cluster, valid_nnodes, valid_ngpus)
-        print(f"{jobnames[i]}, {cluster}: {valid_nnodes}, {valid_ngpus} -> {valid_configs_goodput}")
+        LOG.info(f"job={jobnames[i]}, gpu_type={cluster},  valid_nnodes={valid_nnodes}, valid_ngpus={valid_ngpus} -> {valid_configs_goodput}")
         if valid_configs_goodput is None or valid_nnodes.size == 0:
           nnz_speedups[cluster] = 1
         else:
@@ -600,7 +425,7 @@ class MIPPolicy(object):
     # append slow and fast speedup matrices
     final_speedup_matrix = np.hstack(tuple([cluster_goodput_matrices[cluster] for cluster in self.cluster_ordering]))
 
-    LOG.info(f"speedup matrix: {final_speedup_matrix}")
+    LOG.info(f"Speedup Matrix: {final_speedup_matrix}")
     optim_st_time = time.time()
     if self.apply_timeshare_penalty:
       job_allocs, cluster_allocs = self.__solve_mip_timeshare(final_speedup_matrix, num_gpus, job_weights,
@@ -617,7 +442,7 @@ class MIPPolicy(object):
     for cluster in self.cluster_ordering:
       node_remaining_gpus = np.asarray([node.resources.get("nvidia.com/gpu", 0) for idx, node in nodes[cluster].items()], dtype=np.uint32)
       if cluster in cluster_allocs:
-        cluster_job_placements[cluster] = self.alloc_to_placement_smart(cluster, cluster_allocs[cluster], prev_allocations, node_remaining_gpus)
+        cluster_job_placements[cluster] = alloc_to_placement_smart(cluster, cluster_allocs[cluster], prev_allocations, node_remaining_gpus)
       else:
         cluster_job_placements[cluster] = dict()
     
@@ -752,12 +577,13 @@ class MIPPolicy(object):
     # print(f"OPTIM: Problem: {problem}")
 
     if problem.status != 'optimal':
-      print(f"Solver time: {ed_time - st_time}s")
-      print("Status: ", problem.status)
-      print(f"Problem: {problem}")
-      print("The optimal value is", problem.value)
-      print("A solution x is")
-      print(np.round(x.value))
+      LOG.error(f"Solver time: {ed_time - st_time}s")
+      LOG.error("Status: ", problem.status)
+      LOG.error(f"Problem: {problem}")
+      LOG.error("The optimal value is", problem.value)
+      LOG.error("A solution x is")
+      LOG.error(np.round(x.value))
+      LOG.error("Using solution anyway.. hoping things change next round..")
     
     # record new allocs as prev-alloc for next iter
     output_soln = np.round(x.value, decimals=0).astype(np.uint32)
@@ -942,7 +768,7 @@ class MIPPolicy(object):
     if DEBUG_PHOEBE:
       # blacklist all other gpu types except `chosen_cluster`
       add_nodes = ["phoquad1", "phortx1"]
-      new_nodes = { k : self._get_mock_phoebe_node(k, nodes['phodgx1']) for k in add_nodes}
+      new_nodes = { k : get_mock_phoebe_node(k, nodes['phodgx1']) for k in add_nodes}
       nodes = new_nodes
       LOG.info(f"DEBUG_PHOEBE: Input nodes: {nodes}")
 

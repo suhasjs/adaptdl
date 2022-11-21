@@ -69,7 +69,7 @@ def cache_images(templates):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("policy", type=str, choices=["pollux", "optimus", "tiresias"])
+    parser.add_argument("policy", type=str, choices=["pollux", "mip", "optimus", "tiresias", "gavel"])
     parser.add_argument("workload", type=str, help="path to workload csv")
     parser.add_argument("--repository", type=str, default="docker.pdl.cmu.edu/pollux")
     args = parser.parse_args()
@@ -133,10 +133,10 @@ if __name__ == "__main__":
         env.append({"name": "ADAPTDL_CHECKPOINT_PATH", "value": "/pollux/checkpoint"})
         env.append({"name": "ADAPTDL_TENSORBOARD_LOGDIR", "value": "/pollux/tensorboard"})
         env.append({"name": "APPLICATION", "value": row.application})
-        if args.policy in ["tiresias"]:
+        if args.policy in ["tiresias", "gavel"]:
             job["spec"]["minReplicas"] = job["spec"]["maxReplicas"] = row.num_replicas
             env.append({"name": "TARGET_NUM_REPLICAS", "value": str(row.num_replicas)})
-        if args.policy in ["tiresias", "optimus"]:
+        if args.policy in ["tiresias", "optimus", "gavel"]:
             env.append({"name": "TARGET_BATCH_SIZE", "value": str(row.batch_size)})
         print(yaml.dump(job))
         objs_api.create_namespaced_custom_object(*obj_args, job)

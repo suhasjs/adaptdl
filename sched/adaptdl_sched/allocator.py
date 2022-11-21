@@ -26,6 +26,8 @@ from adaptdl_sched.policy.applications import APPLICATIONS
 from adaptdl_sched.policy.optimus import OptimusPolicy
 from adaptdl_sched.policy.pollux import PolluxPolicy
 from adaptdl_sched.policy.unaware_pollux import UnawarePolluxPolicy
+from adaptdl_sched.policy.gavel import GavelPolicy
+
 from adaptdl_sched.policy.mip import MIPPolicy
 from adaptdl_sched.policy.tiresias import TiresiasPolicy
 from adaptdl_sched.policy.speedup import SpeedupFunction
@@ -41,7 +43,7 @@ LOG.setLevel(logging.INFO)
 
 
 POLICY = "unaware_pollux"
-assert POLICY in ["optimus", "pollux", "unaware_pollux", "tiresias", "mip"]
+assert POLICY in ["optimus", "pollux", "unaware_pollux", "tiresias", "mip", "gavel"]
 
 
 class AdaptDLAllocator(object):
@@ -53,6 +55,8 @@ class AdaptDLAllocator(object):
             self._policy = PolluxPolicy()
         elif POLICY == "unaware_pollux":
             self._policy = UnawarePolluxPolicy()
+        elif POLICY == "gavel":
+            self._policy = GavelPolicy()
         elif POLICY == "optimus":
             self._policy = OptimusPolicy()
         elif POLICY == "tiresias":
@@ -224,6 +228,8 @@ class AdaptDLAllocator(object):
                     job_info.max_replicas = min(job_info.max_replicas, job["spec"]["maxReplicas"])
             elif POLICY == "tiresias":
                 job_info.max_replicas = job_info.target_num_replicas
+            elif POLICY == "gavel":
+                job_info.min_replicas = job_info.max_replicas = job_info.target_num_replicas
             job_infos[(namespace, name)] = job_info
         return job_infos, allocations
 

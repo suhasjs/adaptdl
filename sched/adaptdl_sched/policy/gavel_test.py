@@ -63,7 +63,7 @@ def test_optimize():
            'nvidia.com/gpu': ngpus_per_node, 
            'pods': 84,
            'rdma/hca': 0}
-  nodes = {"phortx"+str(i+1): NodeInfo(node_resources, preemptible=False)
+  nodes = {"phodgx"+str(i+1): NodeInfo(node_resources, preemptible=False)
        for i in range(num_nodes)}
   print(f"Nodes: {nodes}")
   # Add a node template.

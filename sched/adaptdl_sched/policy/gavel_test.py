@@ -42,7 +42,7 @@ def test_optimize():
   now=datetime.now()
   jobs={}
   # Add a few jobs.
-  job_resources={"nvidia.com/gpu": 1, "pods": 1}
+  job_resources={"nvidia.com/gpu": 4, "pods": 1}
   for i in range(2):
     creation_timestamp=now,
     max_replicas=24
@@ -51,11 +51,10 @@ def test_optimize():
     jobs[key]=JobInfo(job_resources, speedup_fn, creation_timestamp,
               min_replicas, max_replicas)
     jobs[key].target_num_replicas=4
-    jobs[key].target_batch_size=4
+    jobs[key].target_batch_size=1024
     jobs[key].attained_service = 0.0
     jobs[key].num_restarts = 0
     jobs[key].age = 1.2
-  jobs['cifar10-1'].max_replicas = 4
 
   # Add a few nodes == phodgx1
   node_resources = {'cpu': 255345, 
@@ -86,41 +85,6 @@ def test_optimize():
     for node_key, count in node_count.items():
       assert count <= nodes[node_key].resources["nvidia.com/gpu"]
       assert count <= nodes[node_key].resources["pods"]
-
-# broken test (from pollux_test)
-def test_unusable_node():
-  # Test where one of the nodes can't be used due to one resource type.
-  nodes = {
-    0: NodeInfo({"gpu": 1, "cpu": 500, "pods": 32}, preemptible=False),
-    1: NodeInfo({"gpu": 1, "cpu": 8000, "pods": 32}, preemptible=False),
-    2: NodeInfo({"gpu": 1, "cpu": 8000, "pods": 32}, preemptible=False),
-  }
-  template = NodeInfo({"gpu": 1, "cpu": 8000, "pods": 32}, preemptible=True)
-  perf_params = PerfParams(0.023, 9.08e-5, 0.0133, 0.008036,
-                           0.012109, 0.007306, 1.914794)
-  grad_params = GradParams(sqr=0.10985, var=2.94965)
-  goodput_fn = GoodputFunction(perf_params, grad_params, 128)
-  speedup_fn = SpeedupFunction(goodput_fn, max_batch_size=4096,
-                 atomic_bsz_range=(32, 4096))
-  now = datetime.now()
-  min_replicas = 0
-  jobs = {
-    0: JobInfo({"gpu": 1, "cpu": 1000, "pods": 1}, speedup_fn,
-          now + timedelta(minutes=0), min_replicas, max_replicas=1),
-    1: JobInfo({"gpu": 1, "cpu": 1000, "pods": 1}, speedup_fn,
-          now + timedelta(minutes=1), min_replicas, max_replicas=1),
-    2: JobInfo({"gpu": 1, "cpu": 1000, "pods": 1}, speedup_fn,
-          now + timedelta(minutes=2), min_replicas, max_replicas=1),
-  }
-  policy = MIPPolicy()
-  allocations, desired_nodes = policy.optimize(jobs, nodes, {}, template)
-  print(f"Allocations: {allocations}")
-  # Check that more nodes are asked for.
-  assert desired_nodes > 3
-  # Check no job was allocated more than 1 replica.
-  assert max(len(alloc) for alloc in allocations.values()) == 1
-  # Check two jobs were allocated.
-  assert sum(len(alloc) for alloc in allocations.values()) == 2
 
 if __name__ == "__main__":
   test_optimize()

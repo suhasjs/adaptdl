@@ -468,10 +468,8 @@ class GavelPolicy(object):
         self._current_time += self._time_per_iteration
         
 
-
         print("########################## End ##################################")   
         return res
-
 
     def predict_throughput(self, job, cname):
         placement = ()

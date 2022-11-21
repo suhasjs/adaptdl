@@ -4,7 +4,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 import cvxpy as cp
 import numpy as np
 
-import job_id_pair
+import adaptdl_sched.policy.gavel_policies.job_id_pair as job_id_pair
 
 class Policy:
 

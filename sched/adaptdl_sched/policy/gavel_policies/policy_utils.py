@@ -7,11 +7,14 @@ import random
 import re
 import socket
 import subprocess
-from policies import allox, fifo, finish_time_fairness, gandiva, isolated, \
+'''
+from adaptdl_sched.policy.gavel_policies import allox, fifo, finish_time_fairness, gandiva, isolated, \
     max_min_fairness, max_min_fairness_water_filling, max_sum_throughput, \
     min_total_duration, min_jct
+'''
+from adaptdl_sched.policy.gavel_policies import max_sum_throughput
 
-from job import Job
+# from job import Job
 
 def get_available_policies():
     return ['allox',
@@ -150,7 +153,7 @@ def get_policy(policy_name, solver=None, seed=None,
     else:
         raise ValueError('Unknown policy!')
     return policy
-
+'''
 def parse_trace(trace_file):
     jobs = []
     arrival_times = []
@@ -173,6 +176,7 @@ def parse_trace(trace_file):
                             SLO=float(SLO)))
             arrival_times.append(float(arrival_time))
     return jobs, arrival_times
+'''
 
 def print_allocation(allocation, current_time=None):
     """Prints the allocation.

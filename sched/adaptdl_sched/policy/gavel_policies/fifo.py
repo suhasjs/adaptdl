@@ -4,7 +4,7 @@ sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 import copy
 import random
 
-import job_id_pair
+import adaptdl_sched.policy.gavel_policies.job_id_pair as job_id_pair
 from policy import Policy, PolicyWithPacking
 
 class FIFOPolicy(Policy):

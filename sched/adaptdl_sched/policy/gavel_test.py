@@ -21,7 +21,7 @@ from adaptdl.goodput import GoodputFunction, PerfParams, GradParams
 from adaptdl_sched.policy.gavel import GavelPolicy
 from adaptdl_sched.policy.speedup import SpeedupFunction
 from adaptdl_sched.policy.utils import JobInfo, NodeInfo
-
+from adaptdl_sched.cluster_config import get_mock_phoebe_node
 
 # using perf params for 4-GPUs cifar10 on phodgx1 (~2m into training)
 def test_optimize():
@@ -43,14 +43,15 @@ def test_optimize():
   jobs={}
   # Add a few jobs.
   job_resources={"nvidia.com/gpu": 4, "pods": 1}
-  for i in range(2):
+  num_replicas=4
+  for i in range(4):
     creation_timestamp=now,
-    max_replicas=24
-    min_replicas=0
+    max_replicas=num_replicas
+    min_replicas=num_replicas
     key="cifar10-"+str(i)
     jobs[key]=JobInfo(job_resources, speedup_fn, creation_timestamp,
               min_replicas, max_replicas)
-    jobs[key].target_num_replicas=4
+    jobs[key].target_num_replicas=num_replicas
     jobs[key].target_batch_size=1024
     jobs[key].attained_service = 0.0
     jobs[key].num_restarts = 0
@@ -63,14 +64,18 @@ def test_optimize():
            'nvidia.com/gpu': ngpus_per_node, 
            'pods': 84,
            'rdma/hca': 0}
-  nodes = {"phodgx"+str(i+1): NodeInfo(node_resources, preemptible=False)
-       for i in range(num_nodes)}
-  print(f"Nodes: {nodes}")
   # Add a node template.
   node_template = NodeInfo(node_resources, preemptible=True)
+  add_nodes = ["phortx1", "phoquad1"]
+  nodes = { k : get_mock_phoebe_node(k, node_template) for k in add_nodes}
+  print(f"Nodes: {nodes}")
   policy = GavelPolicy()
+  cluster_num_nodes = {"rtx" : 1, "quad" : 1}
+  cluster_num_gpus = {"rtx" : 8, "quad" : 4}
+  policy.populate_valid_configs(cluster_num_nodes, cluster_num_gpus)
+
   prev_allocs = {}
-  for i in range(3):
+  for i in range(10):
     start = time.time()
     allocations, desired_nodes = \
       policy.optimize(jobs, nodes, prev_allocs, node_template)

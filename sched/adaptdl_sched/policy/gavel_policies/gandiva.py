@@ -4,7 +4,7 @@ sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 import numpy as np
 import random
 
-import job_id_pair
+import adaptdl_sched.policy.gavel_policies.job_id_pair as job_id_pair
 from policy import PolicyWithPacking
 
 class GandivaPolicy(PolicyWithPacking):

@@ -7,6 +7,9 @@ import copy
 import math
 import numpy as np
 from adaptdl_sched.policy.gavel_policies.policy_utils import get_policy as GetGavelPolicy
+from adaptdl_sched.policy.gavel_policies.gavel_applications import APPLICATIONS
+from adaptdl_sched.cluster_config import ID_TO_NODENAME_MAP, NODENAME_TO_ID_MAP, CLUSTER_NUM_GPUS, BLACKLIST_NODES
+
 
 CONFIGS_4GPU = (np.asarray([1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
                 np.asarray([1, 2, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64]))
@@ -16,7 +19,7 @@ CONFIGS_8GPU = (np.asarray([1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8]),
 
 
 class GavelPolicy(object):
-    def __init__(self, interval, policy="max_sum_throughput_perf"):
+    def __init__(self, interval=360, policy="max_sum_throughput_perf"):
         self.rounds_received = {}
 
         self._debug = True        
@@ -40,7 +43,6 @@ class GavelPolicy(object):
         # cluster
         self._worker_id_to_cluster_mapping = {}
         self._cluster_to_worker_id_mapping = {}
-    '''
     def register_worker_callback(self):
         i = 0
         for cname in sorted(self._cluster_name):
@@ -63,7 +65,36 @@ class GavelPolicy(object):
         print(self._worker_id_to_cluster_mapping)
         print("### _cluster_to_worker_id_mapping")
         print(self._cluster_to_worker_id_mapping)
-    '''
+
+    def populate_valid_configs(self, cluster_num_nodes, cluster_num_gpus):
+        self._cluster_name = list(cluster_num_nodes.keys())
+        # self._cluster_name = {"aws", "rtx", "dgx"}
+        self._cluster_spec = {}
+        for cname in self._cluster_name:
+            self._cluster_spec[cname] = cluster_num_nodes[cname] * cluster_num_gpus[cname]
+        self._num_gpus_per_server = cluster_num_gpus
+        self.register_worker_callback()
+        self._cluster_time = {cname: 0 for cname in self._cluster_name}
+        self._priorities = {cname: {} for cname in self._cluster_name}
+        self._deficits = {cname: {} for cname in self._cluster_name}
+
+        self.configs = dict()
+        self._cluster_name = []
+        print(f"Unique configs:")
+        for cluster_name in cluster_num_gpus.keys():
+            self._cluster_name.append(cluster_name)
+            nnodes, ngpus = cluster_num_nodes[cluster_name], cluster_num_gpus[cluster_name]
+            alloc_configs = CONFIGS_4GPU if ngpus == 4 else CONFIGS_8GPU
+            valid_config_idxs = alloc_configs[0] <= nnodes
+            num_valid_nodes = alloc_configs[0][valid_config_idxs]
+            num_valid_gpus = alloc_configs[1][valid_config_idxs]
+            alloc_configs = (num_valid_nodes, num_valid_gpus)
+            self.configs[cluster_name] = alloc_configs
+            print(f"Cluster: {cluster_name}, Configs: {self.configs[cluster_name]}")
+        self.num_gpu = {}
+        for cluster_name, config in self.configs.items():
+            self.num_gpu[cluster_name] = config[1][-1]
+
     
     def convert_worker_ids(self, worker_ids):
         res = []
@@ -74,6 +105,18 @@ class GavelPolicy(object):
                     idx = worker - sum([self._cluster_spec[cname] for cname in self._cluster_name[:cid]])
                     res.append(math.floor(idx / self._num_gpus_per_server[cname]))
                     # res.append(worker - sum([self._cluster_spec[cname] for cname in self._cluster_name[:cid]]))
+        return res
+
+    def map_workers_to_nodes(self, worker_ids):
+        res = []
+        cname = self._worker_id_to_cluster_mapping[worker_ids[0]]
+        cluster_base_worker_id = self._cluster_to_worker_id_mapping[cname][0][0]
+        for worker in worker_ids:
+            for node_id, node_worker_ids in enumerate(self._cluster_to_worker_id_mapping[cname]):
+                if worker in node_worker_ids:
+                    node_name = ID_TO_NODENAME_MAP[cname][node_id]
+                    res.append(node_name)
+                    break
         return res
 
 
@@ -129,6 +172,9 @@ class GavelPolicy(object):
             job_id: 1
             for job_id in self._jobs
         }
+
+        state['num_steps_remaining'] = 'INVALID'
+        '''
         state['num_steps_remaining'] = {
             job_id: \
                 (1 if job.applications[self._cluster_name[0]].get_completion_epoch(job.target_batch_size) <= job.epoch\
@@ -136,13 +182,14 @@ class GavelPolicy(object):
                            job.applications[self._cluster_name[0]].get_iteration(job.target_batch_size, job.epoch)))
             for job_id, job in self._jobs.items()
         }
+        '''
 
         state['times_since_start'] = {
             job_id: self._jobs[job_id].age
             for job_id in self._jobs
         }
 
-        state['throughputs'] = {job_id : {cname: self.predict_throughput(job, cname) for cname in self._cluster_name} for job_id, job in self._jobs.items()}
+        state['throughputs'] = {job_id : {cname: self.predict_throughput(job_id, job, cname) for cname in self._cluster_name} for job_id, job in self._jobs.items()}
         # state['throughputs'] = {}
         # for job_id, job in self._jobs.items():
         #     ths = {}
@@ -395,8 +442,13 @@ class GavelPolicy(object):
 
         return new_worker_assignments
 
+    def optimize(self, jobs, nodes, prev_allocations, node_template):
+        # set scale factor for each job using target_num_replicas
+        for jname in jobs.keys():
+            jobs[jname].scale_factor = jobs[jname].target_num_replicas
+        return self.optimize_core(jobs, nodes, prev_allocations, node_template)
 
-    def optimize(self, jobs, nodes, prev_allocations):
+    def optimize_core(self, jobs, nodes, prev_allocations, node_template):
 
         print("########################## Start ##################################")
         print(f"Time: {self._current_time} Round: {self._current_time/self._time_per_iteration}")
@@ -453,12 +505,11 @@ class GavelPolicy(object):
         res = {}
         for job_id, worker_ids in scheduled_jobs.items():
             cname = self._worker_id_to_cluster_mapping[worker_ids[0]]
-            ids = self.convert_worker_ids(worker_ids)
-            res[job_id] = (cname, ids)  
+            print(f"worker_ids: {worker_ids}")
+            res[job_id] = self.map_workers_to_nodes(worker_ids)
 
-        print("### converted_ids:")  
+        print("### placements:")  
         print(res)     
-
 
         # update time
         for job_id, worker_ids in scheduled_jobs.items():
@@ -469,9 +520,12 @@ class GavelPolicy(object):
         
 
         print("########################## End ##################################")   
-        return res
+        return res, len(nodes)
 
-    def predict_throughput(self, job, cname):
+    def predict_throughput(self, job_id, job, cname):
+        # get job app name using jobname
+        app_name = job_id.split('-')[0]
+        job_app = APPLICATIONS[cname][app_name]
         placement = ()
         num_gpu_per_node = int(self.configs[cname][1][-1] / self.configs[cname][0][-1])
         # no enough gpus in this cluster
@@ -481,14 +535,16 @@ class GavelPolicy(object):
             placement = (*placement, min(job.scale_factor - sum(placement), num_gpu_per_node))
 
         local_bsz = math.ceil(job.target_batch_size / job.scale_factor - 1e-8)
-        accum_steps = math.ceil(local_bsz / job.applications[cname].max_local_bsz - 1e-8) - 1
+        accum_steps = math.ceil(local_bsz / job_app.max_local_bsz - 1e-8) - 1
         if job.scale_factor == 1:
             accum_steps = max(1, accum_steps)
         atomic_bsz = math.ceil(local_bsz / (accum_steps + 1) - 1e-8)
         count = job.scale_factor * (accum_steps + 1)
-        atomic_bsz = min(atomic_bsz, int(job.applications[cname].max_batch_size / count))
+        atomic_bsz = min(atomic_bsz, int(job_app.max_batch_size / count))
         #throughput = job.speedup_fn._goodput_fn.throughput(len(placement), num_replicas, atomic_bsz, accum_steps)
         #return atomic_bsz * count / throughput
-        # print("\t", cname, placement, atomic_bsz)
-        step_time, sync_time = job.applications[cname].get_throughput(placement, atomic_bsz)
-        return 1 / (step_time + (step_time - sync_time) * accum_steps)
+        print("\t", cname, placement, atomic_bsz)
+        step_time, sync_time = job_app.get_throughput(placement, atomic_bsz)
+        xput = 1 / (step_time + (step_time - sync_time) * accum_steps)
+        print(f"Throughput: {job_id} x {cname} -> {xput}")
+        return xput

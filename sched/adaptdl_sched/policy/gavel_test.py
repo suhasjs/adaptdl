@@ -21,7 +21,7 @@ from adaptdl.goodput import GoodputFunction, PerfParams, GradParams
 from adaptdl_sched.policy.gavel import GavelPolicy
 from adaptdl_sched.policy.speedup import SpeedupFunction
 from adaptdl_sched.policy.utils import JobInfo, NodeInfo
-from adaptdl_sched.cluster_config import get_mock_phoebe_node
+from adaptdl_sched.cluster_config import get_mock_phoebe_node, get_gavel_cluster_config
 
 # using perf params for 4-GPUs cifar10 on phodgx1 (~2m into training)
 def test_optimize():
@@ -70,8 +70,7 @@ def test_optimize():
   nodes = { k : get_mock_phoebe_node(k, node_template) for k in add_nodes}
   print(f"Nodes: {nodes}")
   policy = GavelPolicy()
-  cluster_num_nodes = {"rtx" : 1, "quad" : 1}
-  cluster_num_gpus = {"rtx" : 8, "quad" : 4}
+  cluster_num_nodes, cluster_num_gpus = get_gavel_cluster_config(add_nodes)
   policy.populate_valid_configs(cluster_num_nodes, cluster_num_gpus)
 
   prev_allocs = {}

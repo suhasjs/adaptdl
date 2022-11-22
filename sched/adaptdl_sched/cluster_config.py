@@ -30,6 +30,18 @@ CLUSTER_NUM_GPUS = {
 # do not consider these nodes for scheduling
 BLACKLIST_NODES = ["phoebe-mgmt", "phodgx1", "phodgx2", "phortx2", "phortx3"]
 
+def get_gavel_cluster_config(active_nodes):
+  cluster_num_nodes = {}
+  cluster_ngpus_per_node = {}
+  for node_name in active_nodes:
+    gpu_type = NODE_TO_CLUSTER_MAP[node_name]
+    if gpu_type not in cluster_num_nodes:
+      cluster_num_nodes[gpu_type] = 0
+      cluster_ngpus_per_node[gpu_type] = CLUSTER_NUM_GPUS[gpu_type]
+  
+    cluster_num_nodes[gpu_type] += 1
+  return cluster_num_nodes, cluster_ngpus_per_node
+
 # returns a mock node for phoebe cluster
 def get_mock_phoebe_node(node_name, template_node):
   gpu_type = NODE_TO_CLUSTER_MAP[node_name]

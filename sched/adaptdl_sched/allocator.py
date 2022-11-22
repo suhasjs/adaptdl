@@ -43,13 +43,14 @@ LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
 
 
-POLICY = "unaware_pollux"
+POLICY = "gavel"
 assert POLICY in ["optimus", "pollux", "unaware_pollux", "tiresias", "mip", "gavel"]
-
 
 class AdaptDLAllocator(object):
     # use new APPLICATIONS with support for multiple GPU types
     _use_applications_v2 = True
+    # default cluster to use for choosing APPLICATIONS
+    _default_cluster = "rtx"
 
     def __init__(self, expander):
         self._core_api = kubernetes.client.CoreV1Api()
@@ -222,7 +223,7 @@ class AdaptDLAllocator(object):
             job_info.attained_service = attained_service
             job_info.epoch = job.get("status", {}).get("train", {}).get("epoch", 0)
             if self._use_applications_v2:
-                chosen_cluster = self.default_cluster or "rtx"
+                chosen_cluster = self._default_cluster or "rtx"
                 job_info.application = APPLICATIONS_V2[chosen_cluster][job["spec"]["application"]]
             else:
                 job_info.application = APPLICATIONS[job["spec"]["application"]]

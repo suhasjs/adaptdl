@@ -4,11 +4,17 @@
 
 import collections
 import copy
+import logging
 import math
 import numpy as np
 from adaptdl_sched.policy.gavel_policies.policy_utils import get_policy as GetGavelPolicy
 from adaptdl_sched.policy.applications_v2 import APPLICATIONS
-from adaptdl_sched.cluster_config import ID_TO_NODENAME_MAP, NODENAME_TO_ID_MAP, CLUSTER_NUM_GPUS, BLACKLIST_NODES
+from adaptdl_sched.cluster_config import ID_TO_NODENAME_MAP, get_gavel_cluster_config, get_mock_phoebe_node
+
+LOG = logging.getLogger(__name__)
+LOG.setLevel(logging.INFO)
+
+DEBUG_PHOEBE = True
 
 CONFIGS_4GPU = (np.asarray([1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
                 np.asarray([1, 2, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64]))
@@ -17,8 +23,9 @@ CONFIGS_8GPU = (np.asarray([1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8]),
                 np.asarray([1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64]))
 
 class GavelPolicy(object):
-    def __init__(self, interval=360, policy="max_sum_throughput_perf"):
+    def __init__(self, interval=30, policy="max_sum_throughput_perf"):
         self.rounds_received = {}
+        self._init_complete = False
 
         self._debug = True        
         self._policy = GetGavelPolicy(policy, solver='ECOS', seed=None)
@@ -78,7 +85,7 @@ class GavelPolicy(object):
 
         self.configs = dict()
         self._cluster_name = []
-        print(f"Unique configs:")
+        LOG.info(f"Unique configs:")
         for cluster_name in cluster_num_gpus.keys():
             self._cluster_name.append(cluster_name)
             nnodes, ngpus = cluster_num_nodes[cluster_name], cluster_num_gpus[cluster_name]
@@ -88,11 +95,11 @@ class GavelPolicy(object):
             num_valid_gpus = alloc_configs[1][valid_config_idxs]
             alloc_configs = (num_valid_nodes, num_valid_gpus)
             self.configs[cluster_name] = alloc_configs
-            print(f"Cluster: {cluster_name}, Configs: {self.configs[cluster_name]}")
+            LOG.info(f"Cluster: {cluster_name}, Configs: {self.configs[cluster_name]}")
         self.num_gpu = {}
         for cluster_name, config in self.configs.items():
             self.num_gpu[cluster_name] = config[1][-1]
-
+        LOG.info(f"Scheduler init complete.")
     
     def convert_worker_ids(self, worker_ids):
         res = []
@@ -441,6 +448,22 @@ class GavelPolicy(object):
         return new_worker_assignments
 
     def optimize(self, jobs, nodes, prev_allocations, node_template):
+        LOG.info(f"Input nodes: {nodes}")
+        LOG.info(f"Input jobs: {jobs}")
+        LOG.info(f"Input base_allocations: {prev_allocations}")
+        # TODO :: jobs[i].speedup_fn is not a map : gpu_type -> gpu_speedup_fn
+        if DEBUG_PHOEBE:
+            # blacklist all other gpu types except `chosen_cluster`
+            add_nodes = ["phoquad1", "phortx1"]
+            new_nodes = { k : get_mock_phoebe_node(k, nodes['phodgx1']) for k in add_nodes}
+            nodes = new_nodes
+            LOG.info(f"DEBUG_PHOEBE: Input nodes: {nodes}")
+
+        if not self._init_complete:
+            cluster_num_nodes, cluster_num_gpus = get_gavel_cluster_config(list(nodes.keys()))
+            self.populate_valid_configs(cluster_num_nodes, cluster_num_gpus)
+            self._init_complete = True
+        
         # set scale factor for each job using target_num_replicas
         for jname in jobs.keys():
             jobs[jname].scale_factor = jobs[jname].target_num_replicas
@@ -449,9 +472,9 @@ class GavelPolicy(object):
     def optimize_core(self, jobs, nodes, prev_allocations, node_template):
 
         print("########################## Start ##################################")
-        print(f"Time: {self._current_time} Round: {self._current_time/self._time_per_iteration}")
+        LOG.info(f"Time: {self._current_time} Round: {self._current_time/self._time_per_iteration}")
 
-        print("### jobs:", list(jobs.keys()))
+        LOG.info("### jobs:", jobs)
 
         """populate self._jobs"""
         self.add_jobs(jobs)
@@ -464,11 +487,8 @@ class GavelPolicy(object):
         """ Schedule jobs"""
         scheduled_jobs = self.schedule_jobs_on_workers()
 
-        print("### prev worker assignments:")
-        print(self._current_worker_assignments)
-
-        print("### new worker assignments:")
-        print(scheduled_jobs)
+        LOG.info(f"Prev allocs: {self._current_worker_assignments}")
+        LOG.info(f"New allocs: {scheduled_jobs}")
 
         self._current_worker_assignments = scheduled_jobs
         
@@ -506,8 +526,7 @@ class GavelPolicy(object):
             print(f"worker_ids: {worker_ids}")
             res[job_id] = self.map_workers_to_nodes(worker_ids)
 
-        print("### placements:")  
-        print(res)     
+        LOG.info(f"Final Placements: {res}")  
 
         # update time
         for job_id, worker_ids in scheduled_jobs.items():
@@ -522,7 +541,8 @@ class GavelPolicy(object):
 
     def predict_throughput(self, job_id, job, cname):
         # get job app name using jobname
-        app_name = job_id.split('-')[0]
+        usr_name, job_name = job_id
+        app_name = job_name.split('-')[0]
         job_app = APPLICATIONS[cname][app_name]
         placement = ()
         num_gpu_per_node = int(self.configs[cname][1][-1] / self.configs[cname][0][-1])
@@ -544,5 +564,5 @@ class GavelPolicy(object):
         print("\t", cname, placement, atomic_bsz)
         step_time, sync_time = job_app.get_throughput(placement, atomic_bsz)
         xput = 1 / (step_time + (step_time - sync_time) * accum_steps)
-        print(f"Throughput: {job_id} x {cname} -> {xput}")
+        LOG.info(f"#### Throughput predictor: job={job_id}, gpu_type={cname}, count={job.scale_factor}, req_bsz={job.target_batch_size} --> atomic_bsz={atomic_bsz}, accum={accum_steps > 1}, xput={xput}")
         return xput

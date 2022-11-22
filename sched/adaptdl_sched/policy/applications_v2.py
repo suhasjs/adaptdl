@@ -40,11 +40,12 @@ class Application(object):
         scalability_file = f"scalability-{cluster_suffix}.csv" if cluster_suffix else "scalability.csv"
         self.scalability = \
             pandas.read_csv(os.path.join(trace_dir, scalability_file))
-        self.init_batch_size = init_batch_size #or min(self.validation)
-        self.max_batch_size = max_batch_size
+        self.init_batch_size = init_batch_size or min(self.validation)
+        self.max_batch_size = max_batch_size or max(self.validation)
         self.min_local_bsz = min_local_bsz or self.placements.local_bsz.min()
         self.max_local_bsz = max_local_bsz or self.placements.local_bsz.max()
-        self.max_epochs = max_epochs #or min(map(len, self.validation.values()))
+        assert self.max_batch_size >= self.min_local_bsz
+        self.max_epochs = max_epochs or min(map(len, self.validation.values()))
         self.target_metric = target_metric
 
     def _validated_batch_sizes(self, batch_size):
@@ -60,6 +61,47 @@ class Application(object):
                "{} {}".format(batch_size, list(self.validation))
         assert lower_bsz <= batch_size <= upper_bsz
         return lower_bsz, upper_bsz
+
+    
+    def get_configurations(self, lo_util=0.5, hi_util=0.8, max_gpus=24, ngpus_per_node=4):
+        # Assuming a cluster of max_gpus//ngpus_per_node nodes each with ngpus_per_node GPUs.
+        ret = []
+        base_jct = None
+        base_batch_size = None
+        num_replicas_list = [1]
+        num_replicas_list.extend([2*x for x in range(1, max_gpus // 2)])
+        for num_replicas in num_replicas_list:
+            if num_replicas * self.min_local_bsz > self.max_batch_size:
+                break
+            placement = ()
+            while sum(placement) < num_replicas:
+                placement = (*placement, min(num_replicas - sum(placement), ngpus_per_node))
+            best_jct = None
+            best_batch_size = None
+            for batch_size, valid in self.validation.items():
+                local_bsz = math.ceil(batch_size / sum(placement) - 1e-8)
+                if local_bsz < self.min_local_bsz:
+                    continue
+                accum_steps = math.ceil(local_bsz / self.max_local_bsz - 1e-8) - 1
+                #if sum(placement) == 1 and batch_size > self.init_batch_size:
+                #    accum_steps = max(1, accum_steps)
+                atomic_bsz = math.ceil(local_bsz / (accum_steps + 1) - 1e-8)
+                epoch = self.get_completion_epoch(batch_size)
+                step_time, sync_time = self.get_throughput(placement, atomic_bsz)
+                step_time += accum_steps * (step_time - sync_time)
+                jct = valid.iteration[epoch] * step_time
+                if best_jct is None or jct < best_jct:
+                    best_jct = jct
+                    best_batch_size = batch_size
+            if num_replicas == 1:
+                base_jct = best_jct
+                base_batch_size = best_batch_size
+            elif best_jct < 12 * 3600 and \
+                    lo_util < base_jct / best_jct / num_replicas < hi_util:
+                ret.append((num_replicas, best_batch_size, best_jct))
+        if not ret:
+            ret.append((1, base_batch_size, base_jct))
+        return ret
 
 
     def get_best_batch_size(self, num_replicas):
@@ -210,7 +252,8 @@ class Application(object):
             max_local_bsz = sc_df.local_bsz.max()
         return max_local_bsz
 
-TRACES_DIR = os.path.join(os.path.dirname(__file__), "./gavel_profiles/")
+TRACES_DIR = "/root/adaptdl/sched/traces"
+
 APPLICATIONS = {
     "aws" : {
         "bert": Application(os.path.join(TRACES_DIR, "bert"), max_batch_size=384, cluster_suffix="aws", max_epochs=2),

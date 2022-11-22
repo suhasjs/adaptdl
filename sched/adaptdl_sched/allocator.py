@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from adaptdl.goodput import GoodputFunction, PerfParams, GradParams
 from adaptdl.sched_hints import PERF_PARAMS
 from adaptdl_sched.policy.applications import APPLICATIONS
+from adaptdl_sched.policy.applications_v2 import APPLICATIONS as APPLICATIONS_V2
 from adaptdl_sched.policy.optimus import OptimusPolicy
 from adaptdl_sched.policy.pollux import PolluxPolicy
 from adaptdl_sched.policy.unaware_pollux import UnawarePolluxPolicy
@@ -47,6 +48,9 @@ assert POLICY in ["optimus", "pollux", "unaware_pollux", "tiresias", "mip", "gav
 
 
 class AdaptDLAllocator(object):
+    # use new APPLICATIONS with support for multiple GPU types
+    _use_applications_v2 = True
+
     def __init__(self, expander):
         self._core_api = kubernetes.client.CoreV1Api()
         self._objs_api = kubernetes.client.CustomObjectsApi()
@@ -217,7 +221,11 @@ class AdaptDLAllocator(object):
                                min_replicas, max_replicas, preemptible)
             job_info.attained_service = attained_service
             job_info.epoch = job.get("status", {}).get("train", {}).get("epoch", 0)
-            job_info.application = APPLICATIONS[job["spec"]["application"]]
+            if self._use_applications_v2:
+                chosen_cluster = self.default_cluster or "rtx"
+                job_info.application = APPLICATIONS_V2[chosen_cluster][job["spec"]["application"]]
+            else:
+                job_info.application = APPLICATIONS[job["spec"]["application"]]
             job_info.target_num_replicas = int(job["spec"]["targetNumReplicas"])
             job_info.target_batch_size = int(job["spec"]["targetBatchSize"])
             job_info.num_restarts = job.get("status", {}).get("group") or 0

@@ -7,16 +7,14 @@ import copy
 import math
 import numpy as np
 from adaptdl_sched.policy.gavel_policies.policy_utils import get_policy as GetGavelPolicy
-from adaptdl_sched.policy.gavel_policies.gavel_applications import APPLICATIONS
+from adaptdl_sched.policy.applications_v2 import APPLICATIONS
 from adaptdl_sched.cluster_config import ID_TO_NODENAME_MAP, NODENAME_TO_ID_MAP, CLUSTER_NUM_GPUS, BLACKLIST_NODES
-
 
 CONFIGS_4GPU = (np.asarray([1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
                 np.asarray([1, 2, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64]))
 
 CONFIGS_8GPU = (np.asarray([1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8]),
                 np.asarray([1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64]))
-
 
 class GavelPolicy(object):
     def __init__(self, interval=360, policy="max_sum_throughput_perf"):

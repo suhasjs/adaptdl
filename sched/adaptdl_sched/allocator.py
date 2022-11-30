@@ -43,7 +43,7 @@ LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
 
 
-POLICY = "gavel"
+POLICY = "unaware_pollux"
 assert POLICY in ["optimus", "pollux", "unaware_pollux", "tiresias", "mip", "gavel"]
 
 class AdaptDLAllocator(object):
@@ -51,6 +51,8 @@ class AdaptDLAllocator(object):
     _use_applications_v2 = True
     # default cluster to use for choosing APPLICATIONS
     _default_cluster = "rtx"
+    # delay between consecutive invocations of the scheduler loop
+    _sched_trigger_interval = 60
 
     def __init__(self, expander):
         self._core_api = kubernetes.client.CoreV1Api()
@@ -61,7 +63,8 @@ class AdaptDLAllocator(object):
         elif POLICY == "unaware_pollux":
             self._policy = UnawarePolluxPolicy()
         elif POLICY == "gavel":
-            self._policy = GavelPolicy()
+            self._policy = GavelPolicy(interval=180)
+            self._sched_trigger_interval = 180
         elif POLICY == "optimus":
             self._policy = OptimusPolicy()
         elif POLICY == "tiresias":
@@ -84,8 +87,8 @@ class AdaptDLAllocator(object):
             duration = time.time() - start
             LOG.info("Allocations (in %.3f sec): %s", duration, allocations)
             await self._update_allocations(allocations)
-            LOG.info("Sleep for 60 seconds")
-            await asyncio.sleep(60)
+            LOG.info(f"Sleep for {self._sched_trigger_interval} seconds")
+            await asyncio.sleep(self._sched_trigger_interval)
 
     async def _update_allocations(self, allocations):
         job_list = await self._objs_api.list_namespaced_custom_object(

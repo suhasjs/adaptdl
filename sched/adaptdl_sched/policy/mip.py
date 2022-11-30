@@ -27,9 +27,9 @@ DEBUG_PHOEBE = True
 class MIPPolicy(object):
   # ensure sign(p_fairness) != sign(lambda_*)
   def __init__(self, 
-         p_fairness=-1,
-         lambda_a=0.02,
-         lambda_n=1.2,
+         p_fairness=-0.5,
+         lambda_a=0.01,
+         lambda_n=1.1,
          project_throughputs=True,
          share_max_replicas=False,
          timeshare_penalty_window=None):

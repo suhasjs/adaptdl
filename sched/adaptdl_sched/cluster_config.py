@@ -28,7 +28,7 @@ CLUSTER_NUM_GPUS = {
 }
 
 # do not consider these nodes for scheduling
-BLACKLIST_NODES = ["phoebe-mgmt", "phodgx1", "phodgx2", "phortx2", "phortx3"]
+BLACKLIST_NODES = ["phoebe-mgmt"]
 
 def get_gavel_cluster_config(active_nodes):
   cluster_num_nodes = {}
@@ -48,6 +48,9 @@ def get_mock_phoebe_node(node_name, template_node):
   ngpus_per_node = CLUSTER_NUM_GPUS[gpu_type]
   copy_node = copy.deepcopy(template_node)
   copy_node.resources['nvidia.com/gpu'] = ngpus_per_node
+  copy_node.resources['cpu'] = 12800000
+  copy_node.resources['memory'] = 60393771318325
+  copy_node.resources['pods'] = 128
   return copy_node
 
 ## Attempts to realize allocations in `job_allocs` using nodes in `node_remaining_gpus`

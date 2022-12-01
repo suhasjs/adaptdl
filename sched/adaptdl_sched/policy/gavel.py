@@ -454,8 +454,8 @@ class GavelPolicy(object):
         # TODO :: jobs[i].speedup_fn is not a map : gpu_type -> gpu_speedup_fn
         if DEBUG_PHOEBE:
             # blacklist all other gpu types except `chosen_cluster`
-            add_nodes = ["phoquad1", "phortx1"]
-            new_nodes = { k : get_mock_phoebe_node(k, nodes['phodgx1']) for k in add_nodes}
+            add_nodes = ["phodgx1", "phodgx2", "phoquad1", "phortx1", "phortx2", "phortx3"]
+            new_nodes = { k : get_mock_phoebe_node(k, nodes['phoebe-mgmt']) for k in add_nodes}
             nodes = new_nodes
             LOG.info(f"DEBUG_PHOEBE: Input nodes: {nodes}")
 

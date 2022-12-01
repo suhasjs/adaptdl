@@ -413,6 +413,13 @@ class AdaptDLController(object):
                 "value": pod_gpu_type,
             })
             resources = container.get("resources", {})
+            if pod_gpu_type == "dgx":
+                # add rdma/hca requirement to limits and requested
+                limits = resources.get("limits", {})
+                if len(limits):
+                    limits["rdma/hca"] = 1
+                    resources["requests"]["rdma/hca"] = 1
+                    LOG.info(f"Added rdma/hca requirement to DGX")
             if not resources.get("limits", {}).get("nvidia.com/gpu"):
                 # Apparently if a container doesn't ask for any nvidia.com/gpu,
                 # then it will be allocated all of them???

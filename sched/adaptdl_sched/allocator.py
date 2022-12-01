@@ -43,8 +43,9 @@ LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
 
 
-POLICY = "unaware_pollux"
+POLICY = "mip"
 assert POLICY in ["optimus", "pollux", "unaware_pollux", "tiresias", "mip", "gavel"]
+PHOEBE_DEBUG = True
 
 class AdaptDLAllocator(object):
     # use new APPLICATIONS with support for multiple GPU types
@@ -257,7 +258,9 @@ class AdaptDLAllocator(object):
                 # No node can fit a replica of this job.
                 # TODO: propagate this to the controller so the job is Failed.
                 LOG.warning("Job %s cannot be scheduled!", job_key)
-                jobs.pop(job_key)
+                # TODO: (suhasj) -- uncomment the pop operation after Phoebe experiments
+                if not PHOEBE_DEBUG:
+                    jobs.pop(job_key)
         allocations = {}
         if not jobs:
             # There are no jobs, let the expander shrink the cluster.
@@ -270,8 +273,8 @@ class AdaptDLAllocator(object):
             else:
                 active_nodes = list(nodes)
                 while len(active_nodes) < desired_nodes:
-                    active_nodes.append(f"~{desired_nodes-len(active_nodes)}")
-            self._cluster_expander.fit(active_nodes)
+                    active_nodes.append(f"vnode-~{desired_nodes-len(active_nodes)}")
+            # self._cluster_expander.fit(active_nodes)
             LOG.info("Active nodes: %s", active_nodes)
         elif jobs:
             # Expand job ASG from zero nodes.

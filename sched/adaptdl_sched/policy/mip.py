@@ -315,7 +315,7 @@ class MIPPolicy(object):
         cluster_name, alloc = v
         job_placements[k] = (cluster_name, cluster_job_placements[cluster_name][k])
 
-    return job_placements, None
+    return job_placements, 1
 
   def optimize_mip_inv(self, jobs, nodes, prev_allocations):
     np.set_printoptions(suppress=True)
@@ -462,7 +462,7 @@ class MIPPolicy(object):
     
     # log placements to stdout
     LOG.info(f"Placements: {job_placements}")
-    return job_placements, len(nodes)
+    return job_placements, 1
 
   # alternate formulation with speedups scaled for reallocation
   # cluster_num_gpus = (num_slow_gpus, num_fast_gpus)
@@ -767,8 +767,8 @@ class MIPPolicy(object):
     # TODO :: jobs[i].speedup_fn is not a map : gpu_type -> gpu_speedup_fn
     if DEBUG_PHOEBE:
       # blacklist all other gpu types except `chosen_cluster`
-      add_nodes = ["phoquad1", "phortx1"]
-      new_nodes = { k : get_mock_phoebe_node(k, nodes['phodgx1']) for k in add_nodes}
+      add_nodes = ["phodgx1", "phodgx2", "phoquad1", "phortx1", "phortx2", "phortx3"]
+      new_nodes = { k : get_mock_phoebe_node(k, nodes['phoebe-mgmt']) for k in add_nodes}
       nodes = new_nodes
       LOG.info(f"DEBUG_PHOEBE: Input nodes: {nodes}")
 

@@ -6,12 +6,12 @@ spec:
         # placement: ["phortx2", "phortx2", "phortx2", "phortx2", "phortx2", "phortx2", "phortx2", "phortx2"]
   template:
     spec:
-      # hostNetwork: true
-      tolerations:
-      - key: "experiment-reserved"
-        operator: "Equal"
-        value: "suhasj"
-        effect: "NoSchedule"
+            # hostNetwork: true
+            #tolerations:
+            #- key: "experiment-reserved"
+            #operator: "Equal"
+            #value: "suhasj"
+            #effect: "NoSchedule"
       hostIPC: true
       containers:
       - name: main

@@ -3,16 +3,16 @@ kind: AdaptDLJob
 metadata:
   generateName: imagenet-
 spec:
-        # placement: ["phoquad1", "phoquad1", "phoquad1", "phoquad1"]
+        # placement: ["phodgx2", "phodgx2", "phodgx2", "phodgx2"]
   template:
     spec:
       hostIPC: true
-      tolerations:
-      - key: "experiment-reserved"
-        operator: "Equal"
-        value: "suhasj"
-        effect: "NoSchedule"
-      #      hostNetwork: true
+      #tolerations:
+      #- key: "experiment-reserved"
+      #  operator: "Equal"
+      #  value: "suhasj"
+      #  effect: "NoSchedule"
+        #      hostNetwork: true
       containers:
       - name: main
         securityContext:

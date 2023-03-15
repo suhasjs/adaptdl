@@ -42,7 +42,7 @@ def cache_images(templates):
             "template": {
                 "metadata": {"labels": {"name": "images"}},
                 "spec": {
-                    "tolerations": [{"key": "experiment-reserved", "operator": "Equal", "value": "suhasj", "effect": "NoSchedule"}],
+                    #"tolerations": [{"key": "experiment-reserved", "operator": "Equal", "value": "suhasj", "effect": "NoSchedule"}],
                     "containers": [],
                     "imagePullSecrets": [{"name": "regcred"}],
                 }

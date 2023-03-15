@@ -43,7 +43,7 @@ LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
 
 
-POLICY = "mip"
+POLICY = "unaware_pollux"
 assert POLICY in ["optimus", "pollux", "unaware_pollux", "tiresias", "mip", "gavel"]
 PHOEBE_DEBUG = True
 
@@ -64,8 +64,8 @@ class AdaptDLAllocator(object):
         elif POLICY == "unaware_pollux":
             self._policy = UnawarePolluxPolicy()
         elif POLICY == "gavel":
-            self._policy = GavelPolicy(interval=180)
-            self._sched_trigger_interval = 180
+            self._policy = GavelPolicy(interval=360)
+            self._sched_trigger_interval = 360
         elif POLICY == "optimus":
             self._policy = OptimusPolicy()
         elif POLICY == "tiresias":

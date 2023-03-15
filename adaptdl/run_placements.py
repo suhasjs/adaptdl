@@ -43,8 +43,8 @@ nodes = [n.metadata.name for n in node_list.items]
 print("Nodes:", nodes)
 gpus = [int(n.status.capacity.get("nvidia.com/gpu", "0")) for n in node_list.items]
 nodes, gpus = nodes[2], gpus[2]
-nodes = ["phoquad1"]
-gpus = [4]
+nodes = ["phodgx1", "phodgx2"]
+gpus = [8, 8]
 print("Chosen nodes:", nodes)
 print("Chosen #GPUs:", gpus)
 

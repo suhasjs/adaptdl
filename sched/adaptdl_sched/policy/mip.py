@@ -24,6 +24,20 @@ ZERO_ALLOC_GAIN = 0.01
 
 DEBUG_PHOEBE = True
 
+def get_restart_penalty(jobname):
+    if "deep" in jobname:
+        return 25
+    elif "imagenet" in jobname:
+        return 250
+    elif "cifar" in jobname:
+        return 20
+    elif "bert" in jobname:
+        return 120
+    elif "yolov3" in jobname:
+        return 80
+    else:
+        return 30
+
 class MIPPolicy(object):
   # ensure sign(p_fairness) != sign(lambda_*)
   def __init__(self, 
@@ -121,19 +135,23 @@ class MIPPolicy(object):
   def _compute_goodputs(self, job_info, cluster_name, num_nodes, num_replicas):
     speedup_fn = job_info.speedup_fn.get(cluster_name, None)
     if speedup_fn is None and not self.project_throughputs:
+      LOG.info(f"COMPUTE_GOODPUT:: {cluster_name}, {num_replicas} -> None")
       return None
     if speedup_fn is not None and isinstance(speedup_fn, SpeedupFunction):
       # speedup_fn exists for job in `cluster_name` cluster
       goodput_arr = np.asarray(speedup_fn.get_goodput(num_nodes.astype(np.float32), num_replicas.astype(np.float32)), dtype=np.float32)
+      LOG.info(f"COMPUTE_GOODPUT:: {cluster_name}, {num_replicas} -> {goodput_arr}")
       return goodput_arr
     else:
       # assume linear scalability
+      LOG.info(f"COMPUTE_GOODPUT:: {cluster_name}, {num_replicas} -> Linear")
       return num_replicas
 
     # self.project_throughputs and speedup_fn is None:
     # check if some speedup fn is not None
     any_speedup_fn = any([v is not None for v in job_info.speedup_fn.values()])
     if not any_speedup_fn:
+      LOG.info(f"COMPUTE_GOODPUT:: {cluster_name}, {num_replicas} -> No speedup fns")
       return None
     # take any speedup_fn
     dest_cluster = [k for k in job_info.speedup_fn.keys() if job_info.speedup_fn[k] is not None][0]
@@ -274,9 +292,10 @@ class MIPPolicy(object):
         # assert max(cluster_goodput_matrices[cluster][i, :]) < 500, "bad speedup values"
       
       # re-alloc/migrate factor
-      job_lost_gpu_seconds = (job.num_restarts * self.restart_penalty) + (job.num_migrations * self.migrate_penalty)
-      realloc_factor = max((job.age - job_lost_gpu_seconds), 0) / (job.age + self.restart_penalty)
-      migrate_factor = max((job.age - job_lost_gpu_seconds), 0) / (job.age + self.migrate_penalty)
+      job_restart_penalty = get_restart_penalty(jobnames[i])
+      job_lost_gpu_seconds = (job.num_restarts * job_restart_penalty)
+      realloc_factor = max((job.age - job_lost_gpu_seconds), 0) / (job.age + job_restart_penalty)
+      migrate_factor = max((job.age - job_lost_gpu_seconds), 0) / (job.age + job_restart_penalty)
       realloc_factors.append(realloc_factor)
       migrate_factors.append(migrate_factor)
     

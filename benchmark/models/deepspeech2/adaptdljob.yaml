@@ -8,11 +8,11 @@ spec:
     spec:
             #      hostNetwork: true
       hostIPC: true
-      tolerations:
-      - key: "experiment-reserved"
-        operator: "Equal"
-        value: "suhasj"
-        effect: "NoSchedule"
+      # tolerations:
+      # - key: "experiment-reserved"
+      #   operator: "Equal"
+      #  value: "suhasj"
+      #   effect: "NoSchedule"
       containers:
       - name: main
         securityContext:

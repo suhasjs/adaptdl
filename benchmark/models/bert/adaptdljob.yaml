@@ -8,12 +8,12 @@ spec:
     spec:
       terminationGracePeriodSeconds: 60
       hostIPC: true
-      tolerations:
-      - key: "experiment-reserved"
-        operator: "Equal"
-        value: "suhasj"
-        effect: "NoSchedule"
-      # hostNetwork: true
+      #tolerations:
+      #- key: "experiment-reserved"
+      #  operator: "Equal"
+      #  value: "suhasj"
+      #  effect: "NoSchedule"
+        # hostNetwork: true
       containers:
       - name: main
         securityContext:

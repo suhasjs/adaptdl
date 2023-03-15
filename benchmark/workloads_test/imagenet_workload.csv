@@ -1,2 +1,2 @@
 name,time,application,num_replicas,batch_size
-imagenet-rtx,3,imagenet,12,1600
+imagenet-dgx,3,imagenet,1,800

@@ -17,13 +17,13 @@ import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
+import torch.profiler
 
 import adaptdl
 import adaptdl.torch
 from apex import amp
 from apex.amp._amp_state import _amp_state
 from torch.utils.tensorboard import SummaryWriter
-
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -104,7 +104,7 @@ def main_worker(args):
         train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True,
         num_workers=args.workers, pin_memory=True)
     if args.autoscale_bsz:
-        train_loader.autoscale_batch_size(12800, local_bsz_bounds=(20, 400), gradient_accumulation=True, optimize_app="imagenet")
+        train_loader.autoscale_batch_size(12800, local_bsz_bounds=(20, 800), gradient_accumulation=True, optimize_app="imagenet")
 
     val_loader = adaptdl.torch.AdaptiveDataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
